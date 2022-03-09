@@ -1,0 +1,13 @@
+#!/usr/bin/env gosh
+;; Configuring Gauche-text-yaml
+;; Run ./configure (or gosh ./configure) to generate Makefiles.
+
+(use gauche.configure)
+
+(cf-init-gauche-extension)
+
+(cf-output-default)
+
+;; Local variables:
+;; mode: scheme
+;; end:
