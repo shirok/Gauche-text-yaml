@@ -30,12 +30,12 @@ LOCAL_PATHS = "@LOCAL_PATHS@"
 # Module-specific stuff
 PACKAGE   = Gauche-text-yaml
 
-ARCHFILES = gauche_text_yaml.$(SOEXT)
-SCMFILES  = $(srcdir)/text/yaml.scm
+ARCHFILES = text--yaml.$(SOEXT)
+SCMFILES  = text/yaml.sci
 HEADERS   =
 
 TARGET    = $(ARCHFILES)
-CLEANFILES =
+CLEANFILES = text--yaml.c text/yaml.sci
 CONFIG_GENERATED = Makefile config.cache config.log config.status \
 		   configure.lineno autom4te*.cache $(PACKAGE).gpd
 
@@ -43,16 +43,18 @@ GAUCHE_PKGINCDIR  = "$(DESTDIR)@GAUCHE_PKGINCDIR@"
 GAUCHE_PKGLIBDIR  = "$(DESTDIR)@GAUCHE_PKGLIBDIR@"
 GAUCHE_PKGARCHDIR = "$(DESTDIR)@GAUCHE_PKGARCHDIR@"
 
-gauche_text_yaml_SRCS = $(srcdir)/gauche_text_yaml.c $(srcdir)/gauche_text_yamllib.stub
-gauche_text_yaml_HDRS = $(srcdir)/gauche_text_yaml.h
+SRCS = text--yaml.c
 
 all : $(TARGET)
 
-gauche_text_yaml.$(SOEXT): $(gauche_text_yaml_SRCS) $(gauche_text_yaml_HDRS)
+text--yaml.$(SOEXT) : $(SRCS)
 	$(GAUCHE_PACKAGE) compile \
 	  --cppflags="$(CPPFLAGS)" --cflags="$(CFLAGS)" \
 	  --ldflags="$(LDFLAGS)" --libs="$(LIBS)" \
-	  --local=$(LOCAL_PATHS) --verbose gauche_text_yaml $(gauche_text_yaml_SRCS)
+	  --local=$(LOCAL_PATHS) --verbose text--yaml $(SRCS)
+
+text--yaml.c text/yaml.sci : yaml.scm
+	$(GOSH) precomp -e -i text/yaml.sci -o text--yaml $(srcdir)/yaml.scm
 
 check : all
 	@rm -f test.log
@@ -71,7 +73,7 @@ uninstall :
 	$(INSTALL) -U $(GAUCHE_PKGLIBDIR)/.packages $(PACKAGE).gpd
 
 clean :
-	$(GAUCHE_PACKAGE) compile --clean gauche_text_yaml $(gauche_text_yaml_SRCS)
+	$(GAUCHE_PACKAGE) compile --clean gauche_text_yaml $(SRCS)
 	rm -rf core $(TARGET) $(CLEANFILES) *~ test.log so_locations
 
 distclean : clean

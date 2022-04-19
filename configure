@@ -6,6 +6,11 @@
 
 (cf-init-gauche-extension)
 
+(unless (cf-header-available? "yaml.h")
+  (cf-msg-error "Can't find yaml.h.  LibYAML not installed?"))
+(unless (cf-lib-available? "yaml" "yaml_parser_initialize")
+  (cf-msg-error "Can't find libyaml library.  LibYAML not installed?"))
+
 (cf-output-default)
 
 ;; Local variables:
