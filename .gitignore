@@ -1,0 +1,10 @@
+Gauche-text-yaml.gpd
+Makefile
+VERSION
+
+text--yaml.c
+text/yaml.sci
+
+*.log
+*.o
+*.so
