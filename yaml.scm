@@ -154,6 +154,7 @@
   (when (SCM_YAML_PARSER_P obj)
     (yaml-parser-fini (SCM_YAML_PARSER obj))))
 
+;; API
 (define-cproc make-yaml-parser ()
   (let* ([z::Scm_yaml_parser_Rec* (SCM_NEW Scm_yaml_parser_Rec)])
     (yaml_parser_initialize (& (ref (-> z data) parser)))
@@ -161,10 +162,36 @@
     (Scm_RegisterFinalizer (SCM_OBJ z) yaml-parser-finalize NULL)
     (return (SCM_OBJ z))))
 
+;; API
 (define-cproc yaml-parser-delete (p::<yaml-parser>)
   (yaml-parser-fini p))
 
+;; Canonical handler
+;; NB: It is supposed to return 0 on error.  In our case, Scm_Getz
+;; throws a Scheme error so this one never returns 0.  Should we
+;; capture Scheme error here and return 0?
+(define-cfn yaml-read-handler (data::void* ; ScmPort*
+                               buffer::u_char* ; buffer to write out
+                               size::size_t   ; buffer size
+                               size_read::size_t*) ;actual bytes read
+  ::int :static
+  (let* ([r::ScmSize (Scm_Getz (cast char* buffer) size
+                               (SCM_PORT data))])
+    (cond [(== r EOF) (set! (* size_read) 0)]
+          [else (set! (* size_read) r)])
+    (return 1)))
 
+;; API
+(define-cproc yaml-parser-set-input (p::<yaml-parser> in::<port>) ::<void>
+  (yaml_parser_set_input (& (-> p parser))
+                         yaml-read-handler
+                         (cast void* in)))
+
+;; API
+(define-cproc yaml-parser-set-encoding (p::<yaml-parser>
+                                        encoding::<yaml-encoding>)
+  ::<void>
+  (yaml_parser_set_encoding (& (-> p parser)) encoding))
 
 ;; Local variables:
 ;; mode: scheme
