@@ -140,6 +140,63 @@
     (version-major :type <int>
                    :c-name "data.document_start.version_directive->major")
     ))
+
+ (define-cclass <yaml-document-end-event> :private
+   "yaml_event_t*" "YamlDocumentEndClass" (YamlEventClass)
+   ((implicit :type <int>
+              :c-name "data.document_end.implicit")))
+
+ (define-cclass <yaml-alias-event> :private
+   "yaml_event_t*" "YamlAliasEventClass" (YamlEventClass)
+   ((anchor :type <string>
+            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.alias.anchor);"
+            :setter #f)))
+
+ (define-cclass <yaml-scalar-event> :private
+   "yaml_event_t*" "YamlScalarEventClass" (YamlEventClass)
+   ((anchor :type <string>
+            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.scalar.anchor);"
+            :setter #f)
+    (tag    :type <string>
+            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.scalar.tag);"
+            :setter #f)
+    (value  :type <string>
+            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.scalar.value);"
+            :setter #f)
+    (length :type <size_t>
+            :c-name "data.scalar.length")
+    (plain-implicit :type <int>
+                    :c-name "data.scalar.plain_implicit")
+    (quoted-implicit :type <int>
+                     :c-name "data.scalar.quoted_implicit")
+    (style  :type <yaml-scalar-style>
+            :c-name "data.scalar.style")))
+
+ (define-cclass <yaml-sequence-start-event> :private
+   "yaml_event_t*" "YamlSequenceStartEventClass" (YamlEventClass)
+   ((anchor :type <string>
+            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.sequence_start.anchor);"
+            :setter #f)
+    (tag    :type <string>
+            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.sequence_start.tag);"
+            :setter #f)
+    (implicit :type <int>
+              :c-name "data.sequence_start.implicit")
+    (style :type <yaml-sequence-style>
+           :c-name "data.sequence_start.style")))
+
+ (define-cclass <yaml-mapping-start-event> :private
+   "yaml_event_t*" "YamlMappingStartEventClass" (YamlEventClass)
+   ((anchor :type <string>
+            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.mapping_start.anchor);"
+            :setter #f)
+    (tag    :type <string>
+            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.mapping_start.tag);"
+            :setter #f)
+    (implicit :type <int>
+              :c-name "data.mapping_start.implicit")
+    (style :type <yaml-mapping-style>
+           :c-name "data.mapping_start.style")))
  )
 
 
@@ -192,6 +249,8 @@
                                         encoding::<yaml-encoding>)
   ::<void>
   (yaml_parser_set_encoding (& (-> p parser)) encoding))
+
+
 
 ;; Local variables:
 ;; mode: scheme
