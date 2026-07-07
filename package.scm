@@ -12,7 +12,7 @@
                 Using libyaml."
 
   ;; List of dependencies.
-  :require (("Gauche" (>= "0.9.11-p1")))
+  :require (("Gauche" (>= "0.9.16_pre3")))
 
   ;; List of providing modules
   :providing-modules (text.yaml)

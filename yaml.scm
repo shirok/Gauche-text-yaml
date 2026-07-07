@@ -3,8 +3,11 @@
 ;;;
 
 (define-module text.yaml
-  (export <yaml-parser>
-          make-yaml-parser))
+  (use gauche.native-type)
+  (use gauche.ffi)
+  ;; (export <yaml-parser>
+  ;;         make-yaml-parser)
+  )
 (select-module text.yaml)
 
 (inline-stub
@@ -80,177 +83,88 @@
     YAML_ANCHOR_TOKEN
     YAML_TAG_TOKEN
     YAML_SCALAR_TOKEN))
-
- ;;
- ;; <yaml-mark>
- ;;
- (define-cstruct <yaml-mark> "yaml_mark_t"
-   (index::<size_t>
-    line::<size_t>
-    column::<size_t>))
-
- ;;
- ;; <yaml-token>
- ;;
- (define-cclass <yaml-token> :base :private
-   "yaml_token_t*" "YamlTokenClass" ()
-   ((type :type <yaml-token-type>)))
-
- ;;
- ;; <yaml-parser>
- ;;
- (declcode
-  (define-ctype YamlParser
-    ::(.struct (alive::_Bool
-                parser::yaml_parser_t)))
-  )
-
- (define-cstruct <yaml-parser> "YamlParser"
-   ())                                  ;no publicly accessible slot
-
- ;;
- ;; <yaml-event>
- ;;
- ;; We show each type of yaml_event as a separate subclass in Scheme world.
- ;;
-
- (define-cclass <yaml-event> :base :private
-   "yaml_event_t*" "YamlEventClass" ()
-   ((type       :type <yaml-event-type>)
-    (start-mark :type <yaml-mark>
-                :getter "return Scm_Make_yaml_mark(&obj->start_mark);"
-                :setter #f)
-    (end-mark   :type <yaml-mark>
-                :getter "return Scm_Make_yaml_mark(&obj->end_mark);"
-                :setter #f)))
-
- (define-cclass <yaml-stream-start-event> :private
-   "yaml_event_t*" "YamlStreamStartEventClass" (YamlEventClass)
-   ((enoding :type <yaml-encoding>
-             :c-name "data.stream_start.encoding")))
-
- (define-cclass <yaml-stream-end-event> :private
-   "yaml_event_t*" "YamlStreamEndEventClass" (YamlEventClass)
-   ())
-
- (define-cclass <yaml-document-start-event> :private
-   "yaml_event_t*" "YamlDocumentStartClass" (YamlEventClass)
-   ((version-minor :type <int>
-                   :c-name "data.document_start.version_directive->minor")
-    (version-major :type <int>
-                   :c-name "data.document_start.version_directive->major")
-    ))
-
- (define-cclass <yaml-document-end-event> :private
-   "yaml_event_t*" "YamlDocumentEndClass" (YamlEventClass)
-   ((implicit :type <int>
-              :c-name "data.document_end.implicit")))
-
- (define-cclass <yaml-alias-event> :private
-   "yaml_event_t*" "YamlAliasEventClass" (YamlEventClass)
-   ((anchor :type <string>
-            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.alias.anchor);"
-            :setter #f)))
-
- (define-cclass <yaml-scalar-event> :private
-   "yaml_event_t*" "YamlScalarEventClass" (YamlEventClass)
-   ((anchor :type <string>
-            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.scalar.anchor);"
-            :setter #f)
-    (tag    :type <string>
-            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.scalar.tag);"
-            :setter #f)
-    (value  :type <string>
-            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.scalar.value);"
-            :setter #f)
-    (length :type <size_t>
-            :c-name "data.scalar.length")
-    (plain-implicit :type <int>
-                    :c-name "data.scalar.plain_implicit")
-    (quoted-implicit :type <int>
-                     :c-name "data.scalar.quoted_implicit")
-    (style  :type <yaml-scalar-style>
-            :c-name "data.scalar.style")))
-
- (define-cclass <yaml-sequence-start-event> :private
-   "yaml_event_t*" "YamlSequenceStartEventClass" (YamlEventClass)
-   ((anchor :type <string>
-            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.sequence_start.anchor);"
-            :setter #f)
-    (tag    :type <string>
-            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.sequence_start.tag);"
-            :setter #f)
-    (implicit :type <int>
-              :c-name "data.sequence_start.implicit")
-    (style :type <yaml-sequence-style>
-           :c-name "data.sequence_start.style")))
-
- (define-cclass <yaml-mapping-start-event> :private
-   "yaml_event_t*" "YamlMappingStartEventClass" (YamlEventClass)
-   ((anchor :type <string>
-            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.mapping_start.anchor);"
-            :setter #f)
-    (tag    :type <string>
-            :getter "return SCM_MAKE_STR_COPYING((const char *)obj->data.mapping_start.tag);"
-            :setter #f)
-    (implicit :type <int>
-              :c-name "data.mapping_start.implicit")
-    (style :type <yaml-mapping-style>
-           :c-name "data.mapping_start.style")))
  )
 
+(define yaml_char_t <uint8>)
+(define yaml_char_t* (make-c-pointer-type yaml_char_t))
 
-;;
+(define yaml_version_directive_t
+  (native-type '(.struct yaml_version_directive_s
+                         (major::int
+                          minor::int))))
 
-(define-cfn yaml-parser-fini (p::YamlParser*) ::void :static
-  (when (-> p alive)
-    (set! (-> p alive) FALSE)
-    (yaml_parser_delete (& (-> p parser)))))
+(define yaml_tag_directive_t
+  (native-type `(.struct yaml_tag_directive_s
+                         (handle::,yaml_char_t*
+                          prefix::,yaml_char_t*))))
 
-(define-cfn yaml-parser-finalize (obj _::void*) ::void :static
-  (when (SCM_YAML_PARSER_P obj)
-    (yaml-parser-fini (SCM_YAML_PARSER obj))))
-
-;; API
-(define-cproc make-yaml-parser ()
-  (let* ([z::Scm_yaml_parser_Rec* (SCM_NEW Scm_yaml_parser_Rec)])
-    (yaml_parser_initialize (& (ref (-> z data) parser)))
-    (set! (ref (-> z data) alive) TRUE)
-    (Scm_RegisterFinalizer (SCM_OBJ z) yaml-parser-finalize NULL)
-    (return (SCM_OBJ z))))
-
-;; API
-(define-cproc yaml-parser-delete (p::<yaml-parser>)
-  (yaml-parser-fini p))
-
-;; Canonical handler
-;; NB: It is supposed to return 0 on error.  In our case, Scm_Getz
-;; throws a Scheme error so this one never returns 0.  Should we
-;; capture Scheme error here and return 0?
-(define-cfn yaml-read-handler (data::void* ; ScmPort*
-                               buffer::u_char* ; buffer to write out
-                               size::size_t   ; buffer size
-                               size_read::size_t*) ;actual bytes read
-  ::int :static
-  (let* ([r::ScmSize (Scm_Getz (cast char* buffer) size
-                               (SCM_PORT data))])
-    (cond [(== r EOF) (set! (* size_read) 0)]
-          [else (set! (* size_read) r)])
-    (return 1)))
-
-;; API
-(define-cproc yaml-parser-set-input (p::<yaml-parser> in::<port>) ::<void>
-  (yaml_parser_set_input (& (-> p parser))
-                         yaml-read-handler
-                         (cast void* in)))
-
-;; API
-(define-cproc yaml-parser-set-encoding (p::<yaml-parser>
-                                        encoding::<yaml-encoding>)
-  ::<void>
-  (yaml_parser_set_encoding (& (-> p parser)) encoding))
+(define yaml_mark_t
+  (native-type `(.struct yaml_mark_s
+                         (index::size_t
+                          line::size_t
+                          column::size_t))))
 
 
+(define yaml_encoding_t <int>)          ;enum
+(define yaml_char_style_t <int>)        ;enum
+(define yaml_scalar_style_t <int>)      ;enum
+(define yaml_sequence_style_t <int>)    ;enum
+(define yaml_mapping_style_t <int>)     ;enum
+
+(define yaml_token_t
+  (native-type
+   `(.struct
+     yaml_token_s
+     (data::(.union
+             (stream_start::(.struct (encoding::,yaml_encoding_t))
+              alias       ::(.struct (value::,yaml_char_t*))
+              anchor      ::(.struct (value::,yaml_char_t*))
+              tag         ::(.struct (handle::,yaml_char_t
+                                      suffix::,yaml_char_t*))
+              scalar      ::(.struct (value::,yaml_char_t*
+                                      length::size_t
+                                      style::,yaml_char_style_t))
+              version_directiev::(.struct (major::int
+                                           minor::int))
+              tag_directive::(.struct (handle::,yaml_char_t*
+                                       prefix::,yaml_char_t*))))
+      start_mark::,yaml_mark_t
+      end_mark::,yaml_mark_t))))
+
+(define yaml_event_t
+  (native-type
+   `(.struct
+     yaml_event_s
+     (data::(.union
+             (stream_start::(.struct (encoding::,yaml_encoding_t))
+              document_start::(.struct
+                               (version_directive::(,yaml_version_directive_t *)
+                                tag_directives::(.struct
+                                                 (start::(,yaml_tag_directive_t *)
+                                                  end::(,yaml_tag_directive_t *)))
+                                implicit::int))
+              docuemnt_end::(.struct (implicit::int))
+              alias::(.struct (anchor::,yaml_char_t*))
+              scalar::(.struct
+                       (anchor::,yaml_char_t*
+                        tag::,yaml_char_t*
+                        value::,yaml_char_t*
+                        length::size_t
+                        plain_implicit::int
+                        quoted_implicit::int
+                        style::,yaml_scalar_style_t))
+              sequence_start::(.struct
+                               (anchor::,yaml_char_t*
+                                tag::,yaml_char_t*
+                                implicit::int
+                                style::,yaml_sequence_style_t))
+              mapping_start::(.struct
+                              (anchor::,yaml_char_t*
+                               tag::,yaml_char_t*
+                               implicit::int
+                               style::,yaml_mapping_style_t))))
+      start_mark::,yaml_mark_t
+      end_mark::,yaml_mark_t))))
 
 ;; Local variables:
 ;; mode: scheme

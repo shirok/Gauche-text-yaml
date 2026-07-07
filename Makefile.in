@@ -54,7 +54,7 @@ text--yaml.$(SOEXT) : $(SRCS)
 	  --local=$(LOCAL_PATHS) --verbose text--yaml $(SRCS)
 
 text--yaml.c text/yaml.sci : yaml.scm
-	$(GOSH) precomp -e -i text/yaml.sci -o text--yaml $(srcdir)/yaml.scm
+	$(GOSH) tools/precomp -e -i text/yaml.sci -o text--yaml $(srcdir)/yaml.scm
 
 check : all
 	@rm -f test.log
