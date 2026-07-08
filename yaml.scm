@@ -5,8 +5,9 @@
 (define-module text.yaml
   (use gauche.native-type)
   (use gauche.ffi)
-  ;; (export <yaml-parser>
-  ;;         make-yaml-parser)
+  (use gauche.ffi.native) ; need for now - see https://github.com/shirok/Gauche/issues/1293
+  (export yaml-get-version-string
+          yaml-get-version)
   )
 (select-module text.yaml)
 
@@ -83,6 +84,12 @@
     YAML_ANCHOR_TOKEN
     YAML_TAG_TOKEN
     YAML_SCALAR_TOKEN))
+
+ (define-cenum <yaml_node_type> "yaml_node_type_t"
+   (YAML_NO_NODE
+    YAML_SCALAR_NODE
+    YAML_SEQUENCE_NODE
+    YAML_MAPPING_NODE))
  )
 
 (define yaml_char_t <uint8>)
@@ -110,6 +117,8 @@
 (define yaml_scalar_style_t <int>)      ;enum
 (define yaml_sequence_style_t <int>)    ;enum
 (define yaml_mapping_style_t <int>)     ;enum
+(define yaml_node_type_t <int>)         ;enum
+(define yaml_node_item_t <int>)
 
 (define yaml_token_t
   (native-type
@@ -165,6 +174,53 @@
                                style::,yaml_mapping_style_t))))
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
+
+(define yaml_node_pair_t
+  (native-type
+   `(.struct yaml_node_pair_s (key::int value::int))))
+
+(define yaml_node_t
+  (native-type
+   `(.struct
+     yaml_node_s
+     (type::,yaml_node_type_t
+      tag::,yaml_char_t*
+      data::(.union
+             (scalar::(.struct (value::,yaml_char_t*
+                                length::size_t
+                                style::,yaml_scalar_style_t))
+              sequence::(.struct (start::(,yaml_node_item_t *)
+                                  end::(,yaml_node_item_t *)
+                                  top::(,yaml_node_item_t *)))
+              mapping::(.struct (pairs::(.struct
+                                         (start::(,yaml_node_pair_t *)
+                                          end::(,yaml_node_pair_t *)
+                                          top::(,yaml_node_pair_t *)))
+                                 style::,yaml_mapping_style_t))))
+      start_mark::,yaml_mark_t
+      end_mark::,yaml_mark_t))))
+
+(define yaml_document_t
+  (native-type
+   `(.struct
+     yaml_document_s
+     (nodes::(.struct (start::(,yaml_node_t *)
+                       end::(,yaml_node_t *)
+                       top::(,yaml_node_t *)))
+      version_directive::(,yaml_version_directive_t *)
+      tag_directives::(.struct (start::(,yaml_tag_directive_t *)
+                                end::(,yaml_tag_directive_t *)))
+      start_implicit::int
+      end_implicit::int
+      start_mark::,yaml_mark_t
+      end_mark::,yaml_mark_t))))
+
+(with-ffi (dlopen "libyaml") ()
+  ;; Version Information
+  (define-c-function yaml-get-version-string '() <c-string>)
+  (define-c-function yaml-get-version '(int* int* int*) <void>)
+
+  )
 
 ;; Local variables:
 ;; mode: scheme
