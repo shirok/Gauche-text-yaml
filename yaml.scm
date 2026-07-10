@@ -5,9 +5,8 @@
 (define-module text.yaml
   (use gauche.native-type)
   (use gauche.ffi)
-  (use gauche.ffi.native) ; need for now - see https://github.com/shirok/Gauche/issues/1293
   (export yaml-get-version-string
-          yaml-get-version)
+          (rename api:yaml-get-version yaml-get-version))
   )
 (select-module text.yaml)
 
@@ -221,6 +220,14 @@
   (define-c-function yaml-get-version '(int* int* int*) <void>)
 
   )
+
+(define (api:yaml-get-version)
+  (let*([buf (make-native-handle (native-type '(.array int (3))))]
+        [pbuf (cast-handle 'int* buf)])
+    (yaml-get-version pbuf
+                      (native-pointer+ pbuf 1)
+                      (native-pointer+ pbuf 2))
+    (list (native-aref buf '(0)) (native-aref buf '(1)) (native-aref buf '(2)))))
 
 ;; Local variables:
 ;; mode: scheme
