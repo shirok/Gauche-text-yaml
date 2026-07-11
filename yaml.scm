@@ -227,7 +227,7 @@
     (yaml-get-version pbuf
                       (native-pointer+ pbuf 1)
                       (native-pointer+ pbuf 2))
-    (list (native-aref buf '(0)) (native-aref buf '(1)) (native-aref buf '(2)))))
+    (list (native-aref buf 0) (native-aref buf 1) (native-aref buf 2))))
 
 ;; Local variables:
 ;; mode: scheme
