@@ -219,6 +219,44 @@
   (define-c-function yaml-get-version-string '() <c-string>)
   (define-c-function %yaml-get-version '(int* int* int*) <void>)
 
+  (define-c-function %yaml-token-delete `((,yaml_token_t *)) <void>)
+
+  (define-c-function %yaml-stream-start-event-initialize
+    `((,yaml_event_t *) ,yaml_encoding_t) <int>)
+  (define-c-function %yaml-stream-end-event-initialize
+    `((,yaml_event_t *)) <int>)
+  (define-c-function %yaml-document-start-event-initialize
+    `((,yaml_event_t *)
+      (,yaml_version_directive_t *)
+      (,yaml_tag_directive_t *)
+      (,yaml_tag_directive_t *)
+      int) <int>)
+  (define-c-function %yaml-document-end-event-initialize
+    `((,yaml_event_t *)) <int>)
+  (define-c-function %yaml-alias-event-initialize
+    `((,yaml_event_t *) (const ,yaml_char_t *)) <int>)
+  (define-c-function %yaml-scalar-event-initialize
+    `((,yaml_event_t *)
+      (const ,yaml_char_t *)
+      (const ,yaml_char_t *)
+      (const ,yaml_char_t *)
+      int int int ,yaml_scalar_style_t) <int>)
+  (define-c-function %yaml-sequence-start-event-initialize
+    `((,yaml_event_t *)
+      (const ,yaml_char_t *)
+      (const ,yaml_char_t *)
+      int ,yaml_sequence_style_t) <int>)
+  (define-c-function %yaml-sequence-end-event-initialize
+    `((,yaml_event_t *)) <int>)
+  (define-c-function %yaml-mapping-start-event-initialize
+    `((,yaml_event_t *)
+      (const ,yaml_char_t *)
+      (const ,yaml_char_t *)
+      int ,yaml_sequence_style_t) <int>)
+  (define-c-function %yaml-mapping-end-event-initialize
+    `((,yaml_event_t *)) <int>)
+  (define-c-function %yaml-event-delete
+    `((,yaml_event_t *)) <void>)
   )
 
 (define (yaml-get-version)
