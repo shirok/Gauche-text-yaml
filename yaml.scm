@@ -6,7 +6,7 @@
   (use gauche.native-type)
   (use gauche.ffi)
   (export yaml-get-version-string
-          (rename api:yaml-get-version yaml-get-version))
+          yaml-get-version)
   )
 (select-module text.yaml)
 
@@ -217,16 +217,15 @@
 (with-ffi (dlopen "libyaml") ()
   ;; Version Information
   (define-c-function yaml-get-version-string '() <c-string>)
-  (define-c-function yaml-get-version '(int* int* int*) <void>)
+  (define-c-function %yaml-get-version '(int* int* int*) <void>)
 
   )
 
-(define (api:yaml-get-version)
-  (let*([buf (make-native-handle (native-type '(.array int (3))))]
-        [pbuf (cast-handle 'int* buf)])
-    (yaml-get-version pbuf
-                      (native-pointer+ pbuf 1)
-                      (native-pointer+ pbuf 2))
+(define (yaml-get-version)
+  (let1 buf (make-native-handle (native-type '(.array int (3))))
+    (%yaml-get-version buf
+                       (native-pointer+ buf 1)
+                       (native-pointer+ buf 2))
     (list (native-aref buf 0) (native-aref buf 1) (native-aref buf 2))))
 
 ;; Local variables:
