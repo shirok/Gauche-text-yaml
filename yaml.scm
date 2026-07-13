@@ -89,6 +89,37 @@
     YAML_SCALAR_NODE
     YAML_SEQUENCE_NODE
     YAML_MAPPING_NODE))
+
+ (define-cenum <yaml_parser_state> "yaml_parser_state_t"
+   (YAML_PARSE_STREAM_START_STATE
+    YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE
+    YAML_PARSE_DOCUMENT_START_STATE
+    YAML_PARSE_DOCUMENT_CONTENT_STATE
+    YAML_PARSE_DOCUMENT_END_STATE
+
+    YAML_PARSE_BLOCK_NODE_STATE
+    YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE
+    YAML_PARSE_FLOW_NODE_STATE
+    YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE
+    YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE
+
+    YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE
+    YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE
+    YAML_PARSE_BLOCK_MAPPING_KEY_STATE
+    YAML_PARSE_BLOCK_MAPPING_VALUE_STATE
+    YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE
+
+    YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE
+    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE
+    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE
+    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE
+    YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE
+
+    YAML_PARSE_FLOW_MAPPING_KEY_STATE
+    YAML_PARSE_FLOW_MAPPING_VALUE_STATE
+    YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE
+    YAML_PARSE_END_STATE))
+
  )
 
 (define yaml_char_t <uint8>)
@@ -118,6 +149,8 @@
 (define yaml_mapping_style_t <int>)     ;enum
 (define yaml_node_type_t <int>)         ;enum
 (define yaml_node_item_t <int>)
+(define yaml_error_type_t <int>)        ;enum
+(define yaml_parser_state_t <int>)      ;enum
 
 (define yaml_token_t
   (native-type
@@ -214,13 +247,117 @@
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
 
+(define yaml_read_handler_t
+  (native-type
+   `(.function (void* (unsigned char*) size_t size_t*) int)))
+
+(define yaml_simple_key_t
+  (native-type
+   `(.struct
+     yaml_simple_key_s
+     (possible::int
+      required::int
+      token_number::size_t
+      mark::,yaml_mark_t))))
+
+(define yaml_alias_data_t
+  (native-type
+   `(.struct
+     yaml_alias_data_s
+     (anchor::(,yaml_char_t *)
+      index::int
+      mark::,yaml_mark_t))))
+
+(define FILE <void>) ; Just to tame native-type system
+
+(define yaml_parser_t
+  (native-type
+   `(.struct
+     yaml_parser_s
+     (;; Error handling
+      error::,yaml_error_type_t
+      problem::(const char*)
+      problem_offset::size_t
+      problem_value::int
+      problem_mark::,yaml_mark_t
+      context::(const char*)
+      context_mark::,yaml_mark_t
+
+      ;; Reader stuff
+      read_handler::(,yaml_read_handler_t *)
+      read_handler_data::void*
+      input::(.union
+              (string::(.struct (start::(const unsigned char*)
+                                 end::(const unsigned char*)
+                                 current::(const unsigned char*)))
+               file::(,FILE *)))
+      eof::int
+      buffer::(.struct
+               (start::(,yaml_char_t *)
+                end::(,yaml_char_t *)
+                pointer::(,yaml_char_t *)
+                last::(,yaml_char_t *)))
+      unread::size_t
+      raw_buffer::(.struct
+                   (start::(,yaml_char_t *)
+                    end::(,yaml_char_t *)
+                    pointer::(,yaml_char_t *)
+                    last::(,yaml_char_t *)))
+      encoding::,yaml_encoding_t
+      offset::size_t
+      mark::,yaml_mark_t
+
+      ;; Scanner
+      stream_start_produced::int
+      stream_end_produced::int
+      flow_level::int
+      tokens::(.struct
+               (start::(,yaml_token_t *)
+                end::(,yaml_token_t *)
+                head::(,yaml_token_t *)
+                tail::(,yaml_token_t *)))
+      tokens_parsed::size_t
+      token_available::int
+      indents::(.struct (start::int* end::int* top::int*))
+      indent::int
+      simple_key_allowed::int
+      simple_keys::(.struct
+                    (start::(,yaml_simple_key_t *)
+                     end::(,yaml_simple_key_t *)
+                     top::(,yaml_simple_key_t *)))
+
+      ;; Parser
+      states::(.struct
+               (start::(,yaml_parser_state_t *)
+                end::(,yaml_parser_state_t *)
+                top::(,yaml_parser_state_t *)))
+      state::,yaml_parser_state_t
+      marks::(.struct
+              (start::(,yaml_mark_t *)
+               end::(,yaml_mark_t *)
+               top::(,yaml_mark_t *)))
+      tag_directives::(.struct
+                       (start::(,yaml_tag_directive_t *)
+                        end::(,yaml_tag_directive_t *)
+                        top::(,yaml_tag_directive_t *)))
+
+      ;; Dumper
+      aliases::(.struct
+                (start::(,yaml_alias_data_t *)
+                 end::(,yaml_alias_data_t *)
+                 top::(,yaml_alias_data_t *)))
+      document::(,yaml_document_t *)
+      ))))
+
 (with-ffi (dlopen "libyaml") ()
   ;; Version Information
   (define-c-function yaml-get-version-string '() <c-string>)
   (define-c-function %yaml-get-version '(int* int* int*) <void>)
 
+  ;; Token
   (define-c-function %yaml-token-delete `((,yaml_token_t *)) <void>)
 
+  ;; Event
   (define-c-function %yaml-stream-start-event-initialize
     `((,yaml_event_t *) ,yaml_encoding_t) <int>)
   (define-c-function %yaml-stream-end-event-initialize
@@ -257,6 +394,44 @@
     `((,yaml_event_t *)) <int>)
   (define-c-function %yaml-event-delete
     `((,yaml_event_t *)) <void>)
+
+  ;; Document
+  (define-c-function %yaml-document-initialize
+    `((,yaml_document_t *)
+      (,yaml_version_directive_t *)
+      (,yaml_tag_directive_t *)
+      (,yaml_tag_directive_t *)
+      int int) <int>)
+  (define-c-function %yaml-document-delete `((,yaml_document_t *)) <void>)
+
+  (define-c-function %yaml-document-get-node
+    `((,yaml_document_t *) int)
+    `(,yaml_node_t *))
+  (define-c-function %yaml-document-add-scalar
+    `((,yaml_document_t *)
+      (const ,yaml_char_t *)
+      (const ,yaml_char_t *)
+      int ,yaml_scalar_style_t)
+    <int>)
+  (define-c-function %yaml-document-add-sequence
+    `((,yaml_document_t *)
+      (const ,yaml_char_t *)
+      ,yaml_sequence_style_t)
+    <int>)
+  (define-c-function %yaml-document-add-mapping
+    `((,yaml_document_t *)
+      (const ,yaml_char_t *)
+      ,yaml_mapping_style_t)
+    <int>)
+  (define-c-function %yaml-document-append-sequence-item
+    `((,yaml_document_t *) int int)
+    <int>)
+  (define-c-function %yaml-document-append-mapping-pair
+    `((,yaml_document_t *) int int int)
+    <int>)
+
+  ;;
+
   )
 
 (define (yaml-get-version)
