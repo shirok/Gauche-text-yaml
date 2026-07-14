@@ -14,6 +14,14 @@
        (yaml-get-version-string)
        (string-join (map number->string (yaml-get-version)) "."))
 
-;; If you don't want `gosh' to exit with nonzero status even if
-;; the test fails, pass #f to :exit-on-failure.
+(test-section "parser")
+
+(let1 p (make <yaml-parser>)
+  (test* "parser creation" #t (yaml-parser-active? p))
+  (test* "finish" #f
+         (begin
+           (yaml-fini p)
+           (yaml-parser-active? p)))
+  )
+
 (test-end :exit-on-failure #t)

@@ -6,7 +6,11 @@
   (use gauche.native-type)
   (use gauche.ffi)
   (export yaml-get-version-string
-          yaml-get-version)
+          yaml-get-version
+
+          <yaml-parser>
+          yaml-parser-active?
+          yaml-fini)
   )
 (select-module text.yaml)
 
@@ -349,11 +353,39 @@
       document::(,yaml_document_t *)
       ))))
 
-(with-ffi (dlopen "libyaml") ()
-  ;; Version Information
+(define *libyaml* (dlopen "libyaml"))
+
+;; Many yaml CAPI returns 1 on success, 0 on error.
+(define-syntax call-yaml
+  (syntax-rules ()
+    [(_ fn args ...)
+     (let* ((as (list args ...))
+            (r (apply fn as)))
+       (when (zero? r)
+         (errorf "~a failed with args: ~s" 'fn as))
+       r)]))
+
+;;;
+;;;   Version information
+;;;
+
+(with-ffi *libyaml* ()
   (define-c-function yaml-get-version-string '() <c-string>)
   (define-c-function %yaml-get-version '(int* int* int*) <void>)
+  )
 
+(define (yaml-get-version)
+  (let1 buf (make-native-handle (native-type '(.array int (3))))
+    (%yaml-get-version buf
+                       (native-pointer+ buf 1)
+                       (native-pointer+ buf 2))
+    (list (native-aref buf 0) (native-aref buf 1) (native-aref buf 2))))
+
+;;;
+;;;  Event
+;;;
+
+(with-ffi *libyaml* ()
   ;; Token
   (define-c-function %yaml-token-delete `((,yaml_token_t *)) <void>)
 
@@ -394,8 +426,13 @@
     `((,yaml_event_t *)) <int>)
   (define-c-function %yaml-event-delete
     `((,yaml_event_t *)) <void>)
+  )
 
-  ;; Document
+;;;
+;;;  Document
+;;;
+
+(with-ffi *libyaml* ()
   (define-c-function %yaml-document-initialize
     `((,yaml_document_t *)
       (,yaml_version_directive_t *)
@@ -429,17 +466,69 @@
   (define-c-function %yaml-document-append-mapping-pair
     `((,yaml_document_t *) int int int)
     <int>)
-
-  ;;
-
   )
 
-(define (yaml-get-version)
-  (let1 buf (make-native-handle (native-type '(.array int (3))))
-    (%yaml-get-version buf
-                       (native-pointer+ buf 1)
-                       (native-pointer+ buf 2))
-    (list (native-aref buf 0) (native-aref buf 1) (native-aref buf 2))))
+;;;
+;;;  Parser
+;;;
+
+(with-ffi *libyaml* ()
+  (define-c-function %yaml-parser-initialize
+    `((,yaml_parser_t *)) <int>)
+  (define-c-function %yaml-parser-delete
+    `((,yaml_parser_t *)) <void>)
+
+  (define-c-function %yaml-parser-set-input-string
+    `((,yaml_parser_t *)
+      (const unsigned char*)
+      size_t) <void>)
+
+  (define-c-function %yaml-parser-set-input-file
+    `((,yaml_parser_t *)
+      (,FILE *)) <void>)  ;; NB: not sure how we expose FILE*.
+
+  (define-c-function %yaml-parser-set-input
+    `((,yaml_parser_t *)
+      (,yaml_read_handler_t *)
+      void*) <void>)
+
+  (define-c-function %yaml-parser-set-encoding
+    `((,yaml_parser_t *)
+      ,yaml_encoding_t) <void>)
+
+  (define-c-function %yaml-parser-scan
+    `((,yaml_parser_t *)
+      (,yaml_token_t *)) <int>)
+  )
+
+(define-class <yaml-parser> ()
+  ((%parser :init-form #f)))
+
+(define-method initialize ((p <yaml-parser>) initargs)
+  (next-method)
+  (let1 handle (make-native-handle yaml_parser_t)
+    (call-yaml %yaml-parser-initialize handle)
+    (set! (~ p'%parser) handle)))
+
+(define (yaml-parser-active? parser)
+  (assume-type parser <yaml-parser>)
+  (boolean (~ parser'%parser)))
+
+(define-method yaml-fini ((p <yaml-parser>))
+  (and-let1 handle (~ p'%parser)
+    (%yaml-parser-delete handle)
+    (set! (~ p'%parser) #f)))
+
+(define (%parser-handle parser)
+  (assume-type parser <yaml-parser>)
+  (or (~ parser'%parser)
+      (error "YAML parser has already deleted:" parser)))
+
+(define (yaml-parser-set-input-string parser string)
+  (let1 h (make-native-handle (native-type '(const unsigned char*)) string)
+    (%yaml-parser-set-input-string (%parser-handle parser)
+                                   h
+                                   (string-size string))))
 
 ;; Local variables:
 ;; mode: scheme
