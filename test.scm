@@ -24,4 +24,11 @@
            (yaml-parser-active? p)))
   )
 
+(test* "yaml-parser-load" #t
+       (let1 p (make <yaml-parser>)
+         (yaml-parser-set-input-string p "foo: 3")
+         (let1 d (yaml-parser-load p)
+           (yaml-fini p)
+           (is-a? d <yaml-document>))))
+
 (test-end :exit-on-failure #t)

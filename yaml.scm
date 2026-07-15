@@ -8,9 +8,14 @@
   (export yaml-get-version-string
           yaml-get-version
 
+          yaml-fini
+
+          <yaml-document>
+
           <yaml-parser>
           yaml-parser-active?
-          yaml-fini)
+          yaml-parser-set-input-string
+          yaml-parser-load)
   )
 (select-module text.yaml)
 
@@ -175,6 +180,7 @@
                                        prefix::,yaml_char_t*))))
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
+(define yaml_token_t* (make-c-pointer-type yaml_token_t))
 
 (define yaml_event_t
   (native-type
@@ -210,6 +216,7 @@
                                style::,yaml_mapping_style_t))))
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
+(define yaml_event_t* (make-c-pointer-type yaml_event_t))
 
 (define yaml_node_pair_t
   (native-type
@@ -235,14 +242,15 @@
                                  style::,yaml_mapping_style_t))))
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
+(define yaml_node_t* (make-c-pointer-type yaml_node_t))
 
 (define yaml_document_t
   (native-type
    `(.struct
      yaml_document_s
-     (nodes::(.struct (start::(,yaml_node_t *)
-                       end::(,yaml_node_t *)
-                       top::(,yaml_node_t *)))
+     (nodes::(.struct (start::,yaml_node_t*
+                       end::,yaml_node_t*
+                       top::,yaml_node_t*))
       version_directive::(,yaml_version_directive_t *)
       tag_directives::(.struct (start::(,yaml_tag_directive_t *)
                                 end::(,yaml_tag_directive_t *)))
@@ -250,6 +258,7 @@
       end_implicit::int
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
+(define yaml_document_t* (make-c-pointer-type yaml_document_t))
 
 (define yaml_read_handler_t
   (native-type
@@ -316,10 +325,10 @@
       stream_end_produced::int
       flow_level::int
       tokens::(.struct
-               (start::(,yaml_token_t *)
-                end::(,yaml_token_t *)
-                head::(,yaml_token_t *)
-                tail::(,yaml_token_t *)))
+               (start::,yaml_token_t*
+                end::,yaml_token_t*
+                head::,yaml_token_t*
+                tail::,yaml_token_t*))
       tokens_parsed::size_t
       token_available::int
       indents::(.struct (start::int* end::int* top::int*))
@@ -350,8 +359,9 @@
                 (start::(,yaml_alias_data_t *)
                  end::(,yaml_alias_data_t *)
                  top::(,yaml_alias_data_t *)))
-      document::(,yaml_document_t *)
+      document::,yaml_document_t*
       ))))
+(define yaml_parser_t* (make-c-pointer-type yaml_parser_t))
 
 (define *libyaml* (dlopen "libyaml"))
 
@@ -387,45 +397,45 @@
 
 (with-ffi *libyaml* ()
   ;; Token
-  (define-c-function %yaml-token-delete `((,yaml_token_t *)) <void>)
+  (define-c-function %yaml-token-delete `(,yaml_token_t*) <void>)
 
   ;; Event
   (define-c-function %yaml-stream-start-event-initialize
-    `((,yaml_event_t *) ,yaml_encoding_t) <int>)
+    `(,yaml_event_t* ,yaml_encoding_t) <int>)
   (define-c-function %yaml-stream-end-event-initialize
-    `((,yaml_event_t *)) <int>)
+    `(,yaml_event_t*) <int>)
   (define-c-function %yaml-document-start-event-initialize
-    `((,yaml_event_t *)
+    `(,yaml_event_t*
       (,yaml_version_directive_t *)
       (,yaml_tag_directive_t *)
       (,yaml_tag_directive_t *)
       int) <int>)
   (define-c-function %yaml-document-end-event-initialize
-    `((,yaml_event_t *)) <int>)
+    `(,yaml_event_t*) <int>)
   (define-c-function %yaml-alias-event-initialize
-    `((,yaml_event_t *) (const ,yaml_char_t *)) <int>)
+    `(,yaml_event_t* (const ,yaml_char_t *)) <int>)
   (define-c-function %yaml-scalar-event-initialize
-    `((,yaml_event_t *)
+    `(,yaml_event_t*
       (const ,yaml_char_t *)
       (const ,yaml_char_t *)
       (const ,yaml_char_t *)
       int int int ,yaml_scalar_style_t) <int>)
   (define-c-function %yaml-sequence-start-event-initialize
-    `((,yaml_event_t *)
+    `(,yaml_event_t*
       (const ,yaml_char_t *)
       (const ,yaml_char_t *)
       int ,yaml_sequence_style_t) <int>)
   (define-c-function %yaml-sequence-end-event-initialize
-    `((,yaml_event_t *)) <int>)
+    `(,yaml_event_t*) <int>)
   (define-c-function %yaml-mapping-start-event-initialize
-    `((,yaml_event_t *)
+    `(,yaml_event_t*
       (const ,yaml_char_t *)
       (const ,yaml_char_t *)
       int ,yaml_sequence_style_t) <int>)
   (define-c-function %yaml-mapping-end-event-initialize
-    `((,yaml_event_t *)) <int>)
+    `(,yaml_event_t*) <int>)
   (define-c-function %yaml-event-delete
-    `((,yaml_event_t *)) <void>)
+    `(,yaml_event_t*) <void>)
   )
 
 ;;;
@@ -434,39 +444,47 @@
 
 (with-ffi *libyaml* ()
   (define-c-function %yaml-document-initialize
-    `((,yaml_document_t *)
+    `(,yaml_document_t*
       (,yaml_version_directive_t *)
       (,yaml_tag_directive_t *)
       (,yaml_tag_directive_t *)
       int int) <int>)
-  (define-c-function %yaml-document-delete `((,yaml_document_t *)) <void>)
+  (define-c-function %yaml-document-delete `(,yaml_document_t*) <void>)
 
   (define-c-function %yaml-document-get-node
-    `((,yaml_document_t *) int)
-    `(,yaml_node_t *))
+    `(,yaml_document_t* int)
+    `,yaml_node_t*)
   (define-c-function %yaml-document-add-scalar
-    `((,yaml_document_t *)
+    `(,yaml_document_t*
       (const ,yaml_char_t *)
       (const ,yaml_char_t *)
       int ,yaml_scalar_style_t)
     <int>)
   (define-c-function %yaml-document-add-sequence
-    `((,yaml_document_t *)
+    `(,yaml_document_t*
       (const ,yaml_char_t *)
       ,yaml_sequence_style_t)
     <int>)
   (define-c-function %yaml-document-add-mapping
-    `((,yaml_document_t *)
+    `(,yaml_document_t*
       (const ,yaml_char_t *)
       ,yaml_mapping_style_t)
     <int>)
   (define-c-function %yaml-document-append-sequence-item
-    `((,yaml_document_t *) int int)
+    `(,yaml_document_t* int int)
     <int>)
   (define-c-function %yaml-document-append-mapping-pair
-    `((,yaml_document_t *) int int int)
+    `(,yaml_document_t* int int int)
     <int>)
   )
+
+(define-class <yaml-document> ()
+  ((%doc :init-value #f)))
+
+(define (%wrap-yaml-document handle)
+  (of-type? handle yaml_document_t*)
+  (rlet1 doc (make <yaml-document>)
+    (set! (~ doc'%doc) handle)))
 
 ;;;
 ;;;  Parser
@@ -474,31 +492,39 @@
 
 (with-ffi *libyaml* ()
   (define-c-function %yaml-parser-initialize
-    `((,yaml_parser_t *)) <int>)
+    `(,yaml_parser_t*) <int>)
   (define-c-function %yaml-parser-delete
-    `((,yaml_parser_t *)) <void>)
+    `(,yaml_parser_t*) <void>)
 
   (define-c-function %yaml-parser-set-input-string
-    `((,yaml_parser_t *)
+    `(,yaml_parser_t*
       (const unsigned char*)
       size_t) <void>)
 
   (define-c-function %yaml-parser-set-input-file
-    `((,yaml_parser_t *)
+    `(,yaml_parser_t*
       (,FILE *)) <void>)  ;; NB: not sure how we expose FILE*.
 
   (define-c-function %yaml-parser-set-input
-    `((,yaml_parser_t *)
+    `(,yaml_parser_t*
       (,yaml_read_handler_t *)
       void*) <void>)
 
   (define-c-function %yaml-parser-set-encoding
-    `((,yaml_parser_t *)
+    `(,yaml_parser_t*
       ,yaml_encoding_t) <void>)
 
   (define-c-function %yaml-parser-scan
-    `((,yaml_parser_t *)
-      (,yaml_token_t *)) <int>)
+    `(,yaml_parser_t*
+      ,yaml_token_t*) <int>)
+
+  (define-c-function %yaml-parser-parse
+    `(,yaml_parser_t*
+      ,yaml_event_t*) <int>)
+
+  (define-c-function %yaml-parser-load
+    `(,yaml_parser_t*
+      ,yaml_document_t*) <int>)
   )
 
 (define-class <yaml-parser> ()
@@ -529,6 +555,13 @@
     (%yaml-parser-set-input-string (%parser-handle parser)
                                    h
                                    (string-size string))))
+
+
+(define (yaml-parser-load parser)
+  (let ([doc (make-native-handle yaml_parser_t)]
+        [p (%parser-handle parser)])
+    (call-yaml %yaml-parser-load p doc)
+    (%wrap-yaml-document doc)))
 
 ;; Local variables:
 ;; mode: scheme
