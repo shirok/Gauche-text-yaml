@@ -10,6 +10,8 @@
 
           yaml-fini
 
+          <yaml-mark>
+
           <yaml-document>
 
           <yaml-parser>
@@ -139,6 +141,9 @@
                          (major::int
                           minor::int))))
 
+(define <yaml-version-directive>
+  (make-native-wrapper-class yaml_version_directive_t '<yaml-version-directiev>))
+
 (define yaml_tag_directive_t
   (native-type `(.struct yaml_tag_directive_s
                          (handle::,yaml_char_t*
@@ -150,6 +155,8 @@
                           line::size_t
                           column::size_t))))
 
+(define <yaml-mark>
+  (make-native-wrapper-class yaml_mark_t '<yaml-mark>))
 
 (define yaml_encoding_t <int>)          ;enum
 (define yaml_char_style_t <int>)        ;enum
@@ -479,7 +486,31 @@
   )
 
 (define-class <yaml-document> ()
-  ((%doc :init-value #f)))
+  ((%doc :init-value #f)
+   (version-directive
+    :allocation :virtual
+    :slot-ref (^o (wrap-native-handle
+                   (native*
+                    (native. (%document-handle o)'version_directive)))))
+   (start-implicit?
+    :allocation :virtual
+    :slot-ref (^o (not (zero? (native. (%document-handle o)'start_implicit)))))
+   (end-implicit?
+    :allocation :virtual
+    :slot-ref (^o (not (zero? (native. (%document-handle o)'end_implicit)))))
+   (start-mark
+    :allocation :virtual
+    :slot-ref (^o (wrap-native-handle
+                   (native. (%document-handle o)'start_mark))))
+   (end-mark
+    :allocation :virtual
+    :slot-ref (^o (wrap-native-handle
+                   (native. (%document-handle o)'end_mark))))))
+
+(define (%document-handle document)
+  (assume-type document <yaml-document>)
+  (or (~ document'%doc)
+      (error "YAML document has already been deleted:" document)))
 
 (define (%wrap-yaml-document handle)
   (of-type? handle yaml_document_t*)
@@ -548,7 +579,7 @@
 (define (%parser-handle parser)
   (assume-type parser <yaml-parser>)
   (or (~ parser'%parser)
-      (error "YAML parser has already deleted:" parser)))
+      (error "YAML parser has already been deleted:" parser)))
 
 (define (yaml-parser-set-input-string parser string)
   (let1 h (make-native-handle (native-type '(const unsigned char*)) string)
@@ -558,7 +589,7 @@
 
 
 (define (yaml-parser-load parser)
-  (let ([doc (make-native-handle yaml_parser_t)]
+  (let ([doc (make-native-handle yaml_document_t)]
         [p (%parser-handle parser)])
     (call-yaml %yaml-parser-load p doc)
     (%wrap-yaml-document doc)))
