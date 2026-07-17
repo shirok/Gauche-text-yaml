@@ -164,6 +164,12 @@
   (format port "#<yaml-mark ~a:~a:~a>"
           (~ obj'index) (~ obj'line) (~ obj'column)))
 
+(define-method object-equal? ((a <yaml-mark>) (b <yaml-mark>))
+  (and (eqv? (~ a'index) (~ b'index))
+       (eqv? (~ a'line) (~ b'line))
+       (eqv? (~ a'column) (~ b'column))))
+
+
 (define yaml_encoding_t <int>)          ;enum
 (define yaml_char_style_t <int>)        ;enum
 (define yaml_scalar_style_t <int>)      ;enum
