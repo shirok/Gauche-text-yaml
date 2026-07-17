@@ -143,6 +143,8 @@
 
 (define <yaml-version-directive>
   (make-native-wrapper-class yaml_version_directive_t '<yaml-version-directiev>))
+(define-method write-object ((obj <yaml-version-directive>) port)
+  (format port "#<yaml-version-directive ~a.~a>" (~ obj'major) (~ obj'minor)))
 
 (define yaml_tag_directive_t
   (native-type `(.struct yaml_tag_directive_s
@@ -157,6 +159,10 @@
 
 (define <yaml-mark>
   (make-native-wrapper-class yaml_mark_t '<yaml-mark>))
+
+(define-method write-object ((obj <yaml-mark>) port)
+  (format port "#<yaml-mark ~a:~a:~a>"
+          (~ obj'index) (~ obj'line) (~ obj'column)))
 
 (define yaml_encoding_t <int>)          ;enum
 (define yaml_char_style_t <int>)        ;enum
@@ -490,8 +496,7 @@
    (version-directive
     :allocation :virtual
     :slot-ref (^o (wrap-native-handle
-                   (native*
-                    (native. (%document-handle o)'version_directive)))))
+                   (native. (%document-handle o)'version_directive))))
    (start-implicit?
     :allocation :virtual
     :slot-ref (^o (not (zero? (native. (%document-handle o)'start_implicit)))))
