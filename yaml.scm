@@ -175,6 +175,7 @@
 (define yaml_scalar_style_t <int>)      ;enum
 (define yaml_sequence_style_t <int>)    ;enum
 (define yaml_mapping_style_t <int>)     ;enum
+(define yaml_token_type_t <int>)        ;enum
 (define yaml_node_type_t <int>)         ;enum
 (define yaml_node_item_t <int>)
 (define yaml_error_type_t <int>)        ;enum
@@ -184,7 +185,8 @@
   (native-type
    `(.struct
      yaml_token_s
-     (data::(.union
+     (type::,yaml_token_type_t
+      data::(.union
              (stream_start::(.struct (encoding::,yaml_encoding_t))
               alias       ::(.struct (value::,yaml_char_t*))
               anchor      ::(.struct (value::,yaml_char_t*))
@@ -505,10 +507,10 @@
                    (native. (%document-handle o)'version_directive))))
    (start-implicit?
     :allocation :virtual
-    :slot-ref (^o (not (zero? (native. (%document-handle o)'start_implicit)))))
+    :slot-ref (^o (c-int->boolean (native. (%document-handle o)'start_implicit))))
    (end-implicit?
     :allocation :virtual
-    :slot-ref (^o (not (zero? (native. (%document-handle o)'end_implicit)))))
+    :slot-ref (^o (c-int->boolean (native. (%document-handle o)'end_implicit))))
    (start-mark
     :allocation :virtual
     :slot-ref (^o (wrap-native-handle
