@@ -32,7 +32,7 @@
          (let1 d (yaml-parser-load p)
            (yaml-fini p)
            (and (is-a? d <yaml-document>)
-                (list (~ d'start-mark)
-                      (~ d'end-mark))))))
+                (list (~ d'start_mark)
+                      (~ d'end_mark))))))
 
 (test-end :exit-on-failure #t)

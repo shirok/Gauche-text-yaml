@@ -141,8 +141,8 @@
                          (major::int
                           minor::int))))
 
-(define <yaml-version-directive>
-  (make-native-wrapper-class yaml_version_directive_t '<yaml-version-directiev>))
+(define-native-wrapper-class <yaml-version-directive> yaml_version_directive_t)
+
 (define-method write-object ((obj <yaml-version-directive>) port)
   (format port "#<yaml-version-directive ~a.~a>" (~ obj'major) (~ obj'minor)))
 
@@ -157,8 +157,7 @@
                           line::size_t
                           column::size_t))))
 
-(define <yaml-mark>
-  (make-native-wrapper-class yaml_mark_t '<yaml-mark>))
+(define-native-wrapper-class <yaml-mark> yaml_mark_t)
 
 (define-method write-object ((obj <yaml-mark>) port)
   (format port "#<yaml-mark ~a:~a:~a>"
@@ -499,36 +498,20 @@
     <int>)
   )
 
-(define-class <yaml-document> ()
-  ((%doc :init-value #f)
-   (version-directive
-    :allocation :virtual
-    :slot-ref (^o (wrap-native-handle
-                   (native. (%document-handle o)'version_directive))))
-   (start-implicit?
-    :allocation :virtual
-    :slot-ref (^o (c-int->boolean (native. (%document-handle o)'start_implicit))))
-   (end-implicit?
-    :allocation :virtual
-    :slot-ref (^o (c-int->boolean (native. (%document-handle o)'end_implicit))))
-   (start-mark
-    :allocation :virtual
-    :slot-ref (^o (wrap-native-handle
-                   (native. (%document-handle o)'start_mark))))
-   (end-mark
-    :allocation :virtual
-    :slot-ref (^o (wrap-native-handle
-                   (native. (%document-handle o)'end_mark))))))
-
-(define (%document-handle document)
-  (assume-type document <yaml-document>)
-  (or (~ document'%doc)
-      (error "YAML document has already been deleted:" document)))
-
-(define (%wrap-yaml-document handle)
-  (of-type? handle yaml_document_t*)
-  (rlet1 doc (make <yaml-document>)
-    (set! (~ doc'%doc) handle)))
+(define-native-wrapper-class <yaml-document> yaml_document_t
+  :slot-overrides
+  `((version_direction
+     ,(^o (wrap-native-handle (native. (wrapped-handle o)'version_direction))))
+    (start_implicit
+     ,(^o (c-int->boolean (native. (wrapped-handle o)'start_implicit))))
+    (end_implicit
+     ,(^o (c-int->boolean (native. (wrapped-handle o)'end_implicit))))
+    (start_mark
+     ,(^o (wrap-native-handle
+           (native. (wrapped-handle o)'start_mark))))
+    (end_mark
+     ,(^o (wrap-native-handle
+           (native. (wrapped-handle o)'end_mark))))))
 
 ;;;
 ;;;  Parser
@@ -605,7 +588,7 @@
   (let ([doc (make-native-handle yaml_document_t)]
         [p (%parser-handle parser)])
     (call-yaml %yaml-parser-load p doc)
-    (%wrap-yaml-document doc)))
+    (wrap-native-handle doc)))
 
 ;; Local variables:
 ;; mode: scheme
