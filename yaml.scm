@@ -202,6 +202,8 @@
       end_mark::,yaml_mark_t))))
 (define yaml_token_t* (make-c-pointer-type yaml_token_t))
 
+(define-native-wrapper-class <yaml-token> yaml_token_t)
+
 (define yaml_event_t
   (native-type
    `(.struct
@@ -500,18 +502,10 @@
 
 (define-native-wrapper-class <yaml-document> yaml_document_t
   :slot-overrides
-  `((version_direction
-     ,(^o (wrap-native-handle (native. (wrapped-handle o)'version_direction))))
-    (start_implicit
-     ,(^o (c-int->boolean (native. (wrapped-handle o)'start_implicit))))
-    (end_implicit
-     ,(^o (c-int->boolean (native. (wrapped-handle o)'end_implicit))))
-    (start_mark
-     ,(^o (wrap-native-handle
-           (native. (wrapped-handle o)'start_mark))))
-    (end_mark
-     ,(^o (wrap-native-handle
-           (native. (wrapped-handle o)'end_mark))))))
+  `((start_implicit :ref-converter ,c-int->boolean
+                    :set! #f)
+    (end_implicit   :ref-converter ,c-int->boolean
+                    :set! #f)))
 
 ;;;
 ;;;  Parser
