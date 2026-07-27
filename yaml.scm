@@ -3,6 +3,7 @@
 ;;;
 
 (define-module text.yaml
+  (use gauche.dictionary)
   (use gauche.native-type)
   (use gauche.ffi)
   (export yaml-get-version-string
@@ -12,11 +13,38 @@
 
           <yaml-mark>
 
+          <yaml-token>
+          YAML_NO_TOKEN
+          YAML_STREAM_START_TOKEN
+          YAML_STREAM_END_TOKEN
+          YAML_VERSION_DIRECTIVE_TOKEN
+          YAML_TAG_DIRECTIVE_TOKEN
+          YAML_DOCUMENT_START_TOKEN
+          YAML_DOCUMENT_END_TOKEN
+          YAML_BLOCK_SEQUENCE_START_TOKEN
+          YAML_BLOCK_MAPPING_START_TOKEN
+          YAML_BLOCK_END_TOKEN
+          YAML_FLOW_SEQUENCE_START_TOKEN
+          YAML_FLOW_SEQUENCE_END_TOKEN
+          YAML_FLOW_MAPPING_START_TOKEN
+          YAML_FLOW_MAPPING_END_TOKEN
+          YAML_BLOCK_ENTRY_TOKEN
+          YAML_FLOW_ENTRY_TOKEN
+          YAML_KEY_TOKEN
+          YAML_VALUE_TOKEN
+          YAML_ALIAS_TOKEN
+          YAML_ANCHOR_TOKEN
+          YAML_TAG_TOKEN
+          YAML_SCALAR_TOKEN
+          yaml-token-type-name
+          yaml-token-type-value
+
           <yaml-document>
 
           <yaml-parser>
           yaml-parser-active?
           yaml-parser-set-input-string
+          yaml-parser-scan!
           yaml-parser-load)
   )
 (select-module text.yaml)
@@ -203,6 +231,37 @@
 (define yaml_token_t* (make-c-pointer-type yaml_token_t))
 
 (define-native-wrapper-class <yaml-token> yaml_token_t)
+
+(define *yaml-token-type-map*
+  (rlet1 m (make-bimap (make-hash-table 'eqv?) (make-hash-table 'eqv?))
+    (for-each (^p (bimap-put! m (car p) (cdr p)))
+              `((YAML_NO_TOKEN . ,YAML_NO_TOKEN)
+                (YAML_STREAM_START_TOKEN . ,YAML_STREAM_START_TOKEN)
+                (YAML_STREAM_END_TOKEN . ,YAML_STREAM_END_TOKEN)
+                (YAML_VERSION_DIRECTIVE_TOKEN . ,YAML_VERSION_DIRECTIVE_TOKEN)
+                (YAML_TAG_DIRECTIVE_TOKEN . ,YAML_TAG_DIRECTIVE_TOKEN)
+                (YAML_DOCUMENT_START_TOKEN . ,YAML_DOCUMENT_START_TOKEN)
+                (YAML_DOCUMENT_END_TOKEN . ,YAML_DOCUMENT_END_TOKEN)
+                (YAML_BLOCK_SEQUENCE_START_TOKEN . ,YAML_BLOCK_SEQUENCE_START_TOKEN)
+                (YAML_BLOCK_MAPPING_START_TOKEN . ,YAML_BLOCK_MAPPING_START_TOKEN)
+                (YAML_BLOCK_END_TOKEN . ,YAML_BLOCK_END_TOKEN)
+                (YAML_FLOW_SEQUENCE_START_TOKEN . ,YAML_FLOW_SEQUENCE_START_TOKEN)
+                (YAML_FLOW_SEQUENCE_END_TOKEN . ,YAML_FLOW_SEQUENCE_END_TOKEN)
+                (YAML_FLOW_MAPPING_START_TOKEN . ,YAML_FLOW_MAPPING_START_TOKEN)
+                (YAML_FLOW_MAPPING_END_TOKEN . ,YAML_FLOW_MAPPING_END_TOKEN)
+                (YAML_BLOCK_ENTRY_TOKEN . ,YAML_BLOCK_ENTRY_TOKEN)
+                (YAML_FLOW_ENTRY_TOKEN . ,YAML_FLOW_ENTRY_TOKEN)
+                (YAML_KEY_TOKEN . ,YAML_KEY_TOKEN)
+                (YAML_VALUE_TOKEN . ,YAML_VALUE_TOKEN)
+                (YAML_ALIAS_TOKEN . ,YAML_ALIAS_TOKEN)
+                (YAML_ANCHOR_TOKEN . ,YAML_ANCHOR_TOKEN)
+                (YAML_TAG_TOKEN . ,YAML_TAG_TOKEN)
+                (YAML_SCALAR_TOKEN . ,YAML_SCALAR_TOKEN)))))
+
+(define (yaml-token-type-name token-type)
+  (bimap-right-get *yaml-token-type-map* token-type))
+(define (yaml-token-type-value token-type-name)
+  (bimap-left-get *yaml-token-type-map* token-type-name))
 
 (define yaml_event_t
   (native-type
@@ -502,10 +561,12 @@
 
 (define-native-wrapper-class <yaml-document> yaml_document_t
   :slot-overrides
-  `((start_implicit :ref-converter ,c-int->boolean
-                    :set! #f)
-    (end_implicit   :ref-converter ,c-int->boolean
-                    :set! #f)))
+  `((start_implicit? :field-name start_implicit
+                     :ref-converter ,c-int->boolean
+                     :set! #f)
+    (end_implicit?   :field-name end_implicit
+                     :ref-converter ,c-int->boolean
+                     :set! #f)))
 
 ;;;
 ;;;  Parser
@@ -577,6 +638,11 @@
                                    h
                                    (string-size string))))
 
+(define (yaml-parser-scan! parser token)
+  (assume-type token <yaml-token>)
+  (call-yaml %yaml-parser-scan
+             (%parser-handle parser)
+             (wrapped-handle token)))
 
 (define (yaml-parser-load parser)
   (let ([doc (make-native-handle yaml_document_t)]
