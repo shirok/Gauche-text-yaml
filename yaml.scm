@@ -161,10 +161,10 @@
 
  )
 
-(define yaml_char_t <uint8>)
-(define yaml_char_t* (make-c-pointer-type yaml_char_t))
+(define-type yaml_char_t <uint8>)
+(define-type yaml_char_t* (make-c-pointer-type yaml_char_t))
 
-(define yaml_version_directive_t
+(define-type yaml_version_directive_t
   (native-type '(.struct yaml_version_directive_s
                          (major::int
                           minor::int))))
@@ -174,12 +174,12 @@
 (define-method write-object ((obj <yaml-version-directive>) port)
   (format port "#<yaml-version-directive ~a.~a>" (~ obj'major) (~ obj'minor)))
 
-(define yaml_tag_directive_t
+(define-type yaml_tag_directive_t
   (native-type `(.struct yaml_tag_directive_s
                          (handle::,yaml_char_t*
                           prefix::,yaml_char_t*))))
 
-(define yaml_mark_t
+(define-type yaml_mark_t
   (native-type `(.struct yaml_mark_s
                          (index::size_t
                           line::size_t
@@ -197,18 +197,18 @@
        (eqv? (~ a'column) (~ b'column))))
 
 
-(define yaml_encoding_t <int>)          ;enum
-(define yaml_char_style_t <int>)        ;enum
-(define yaml_scalar_style_t <int>)      ;enum
-(define yaml_sequence_style_t <int>)    ;enum
-(define yaml_mapping_style_t <int>)     ;enum
-(define yaml_token_type_t <int>)        ;enum
-(define yaml_node_type_t <int>)         ;enum
-(define yaml_node_item_t <int>)
-(define yaml_error_type_t <int>)        ;enum
-(define yaml_parser_state_t <int>)      ;enum
+(define-type yaml_encoding_t <int>)          ;enum
+(define-type yaml_char_style_t <int>)        ;enum
+(define-type yaml_scalar_style_t <int>)      ;enum
+(define-type yaml_sequence_style_t <int>)    ;enum
+(define-type yaml_mapping_style_t <int>)     ;enum
+(define-type yaml_token_type_t <int>)        ;enum
+(define-type yaml_node_type_t <int>)         ;enum
+(define-type yaml_node_item_t <int>)
+(define-type yaml_error_type_t <int>)        ;enum
+(define-type yaml_parser_state_t <int>)      ;enum
 
-(define yaml_token_t
+(define-type yaml_token_t
   (native-type
    `(.struct
      yaml_token_s
@@ -222,13 +222,13 @@
               scalar      ::(.struct (value::,yaml_char_t*
                                       length::size_t
                                       style::,yaml_char_style_t))
-              version_directiev::(.struct (major::int
+              version_directive::(.struct (major::int
                                            minor::int))
               tag_directive::(.struct (handle::,yaml_char_t*
                                        prefix::,yaml_char_t*))))
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
-(define yaml_token_t* (make-c-pointer-type yaml_token_t))
+(define-type yaml_token_t* (make-c-pointer-type yaml_token_t))
 
 (define-native-wrapper-class <yaml-token> yaml_token_t)
 
@@ -263,7 +263,7 @@
 (define (yaml-token-type-value token-type-name)
   (bimap-left-get *yaml-token-type-map* token-type-name))
 
-(define yaml_event_t
+(define-type yaml_event_t
   (native-type
    `(.struct
      yaml_event_s
@@ -297,13 +297,13 @@
                                style::,yaml_mapping_style_t))))
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
-(define yaml_event_t* (make-c-pointer-type yaml_event_t))
+(define-type yaml_event_t* (make-c-pointer-type yaml_event_t))
 
-(define yaml_node_pair_t
+(define-type yaml_node_pair_t
   (native-type
    `(.struct yaml_node_pair_s (key::int value::int))))
 
-(define yaml_node_t
+(define-type yaml_node_t
   (native-type
    `(.struct
      yaml_node_s
@@ -323,9 +323,9 @@
                                  style::,yaml_mapping_style_t))))
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
-(define yaml_node_t* (make-c-pointer-type yaml_node_t))
+(define-type yaml_node_t* (make-c-pointer-type yaml_node_t))
 
-(define yaml_document_t
+(define-type yaml_document_t
   (native-type
    `(.struct
      yaml_document_s
@@ -339,13 +339,13 @@
       end_implicit::int
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
-(define yaml_document_t* (make-c-pointer-type yaml_document_t))
+(define-type yaml_document_t* (make-c-pointer-type yaml_document_t))
 
-(define yaml_read_handler_t
+(define-type yaml_read_handler_t
   (native-type
    `(.function (void* (unsigned char*) size_t size_t*) int)))
 
-(define yaml_simple_key_t
+(define-type yaml_simple_key_t
   (native-type
    `(.struct
      yaml_simple_key_s
@@ -354,7 +354,7 @@
       token_number::size_t
       mark::,yaml_mark_t))))
 
-(define yaml_alias_data_t
+(define-type yaml_alias_data_t
   (native-type
    `(.struct
      yaml_alias_data_s
@@ -362,9 +362,9 @@
       index::int
       mark::,yaml_mark_t))))
 
-(define FILE <void>) ; Just to tame native-type system
+(define-type FILE <void>) ; Just to tame native-type system
 
-(define yaml_parser_t
+(define-type yaml_parser_t
   (native-type
    `(.struct
      yaml_parser_s
@@ -442,7 +442,7 @@
                  top::(,yaml_alias_data_t *)))
       document::,yaml_document_t*
       ))))
-(define yaml_parser_t* (make-c-pointer-type yaml_parser_t))
+(define-type yaml_parser_t* (make-c-pointer-type yaml_parser_t))
 
 (define *libyaml* (dlopen "libyaml"))
 
