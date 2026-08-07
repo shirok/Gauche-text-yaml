@@ -64,6 +64,7 @@
           yaml-parser-set-input-string
           yaml-parser-scan!
           yaml-parser-parse!
+          yaml-parser-parse
           yaml-parser-load)
   )
 (select-module text.yaml)
@@ -696,7 +697,10 @@
       (error "YAML parser has already been deleted:" parser)))
 
 (define (yaml-parser-set-input-string parser string)
-  (let1 h (make-native-handle (native-type '(const unsigned char*)) string)
+  ;; NB: make-native-handle doesn't take an empty string.  We pass a dummy
+  ;; buffer instead; libyaml won't look at it, for the size is zero.
+  (let1 h (make-native-handle (native-type '(const unsigned char*))
+                              (if (equal? string "") " " string))
     (%yaml-parser-set-input-string (%parser-handle parser)
                                    h
                                    (string-size string))))
@@ -717,6 +721,59 @@
 (define (yaml-event-delete! event)
   (assume-type event <yaml-event>)
   (%yaml-event-delete (wrapped-handle event)))
+
+;; Reads the entire yaml stream from PARSER, and returns a list of
+;; documents, each of which is an S-expression representation of the
+;; document:
+;;   A scalar is a string.
+;;   A sequence is a vector of its items.
+;;   A mapping is an assoc list of its key and value.
+(define (yaml-parser-parse parser)
+  (let1 event (make <yaml-event>)
+    ;; Reads the next event, and returns its type and, if it is a scalar
+    ;; event, its value.  The event data is released before returning, so
+    ;; the caller must not touch EVENT itself.
+    (define (next!)
+      (yaml-parser-parse! parser event)
+      (let* ([type (~ event'type)]
+             [val (and (= type YAML_SCALAR_EVENT)
+                       (yaml-event-scalar-value event))])
+        (yaml-event-delete! event)
+        (values type val)))
+    (define (unexpected type)
+      (errorf "Unexpected yaml event: ~a" (yaml-event-type-name type)))
+    (define (node type val)
+      (cond [(= type YAML_SCALAR_EVENT) val]
+            [(= type YAML_SEQUENCE_START_EVENT) (sequence '())]
+            [(= type YAML_MAPPING_START_EVENT) (mapping '())]
+            [(= type YAML_ALIAS_EVENT) (error "YAML alias is not supported")]
+            [else (unexpected type)]))
+    (define (sequence items)
+      (receive (type val) (next!)
+        (if (= type YAML_SEQUENCE_END_EVENT)
+          (list->vector (reverse items))
+          (sequence (cons (node type val) items)))))
+    (define (mapping pairs)
+      (receive (type val) (next!)
+        (if (= type YAML_MAPPING_END_EVENT)
+          (reverse pairs)
+          (let1 k (node type val)
+            (receive (type val) (next!)
+              (mapping (acons k (node type val) pairs)))))))
+    (define (documents docs)
+      (receive (type val) (next!)
+        (cond [(= type YAML_STREAM_END_EVENT) (reverse docs)]
+              [(= type YAML_DOCUMENT_START_EVENT)
+               (let1 doc (receive (type val) (next!) (node type val))
+                 (receive (type val) (next!)
+                   (unless (= type YAML_DOCUMENT_END_EVENT)
+                     (unexpected type))
+                   (documents (cons doc docs))))]
+              [else (unexpected type)])))
+    (receive (type val) (next!)
+      (unless (= type YAML_STREAM_START_EVENT)
+        (unexpected type))
+      (documents '()))))
 
 (define (yaml-parser-load parser)
   (let ([doc (make-native-handle yaml_document_t)]

@@ -48,7 +48,7 @@
              (loop)))
          (reverse r)))
 
-(test* "yaml-parser-parse"
+(test* "yaml-parser-parse!"
        '(YAML_STREAM_START_EVENT
          YAML_DOCUMENT_START_EVENT
          YAML_MAPPING_START_EVENT
@@ -72,6 +72,37 @@
              (unless last? (loop))))
          (yaml-fini p)
          (reverse r)))
+
+(define (parse-string str)
+  (let1 p (make <yaml-parser>)
+    (unwind-protect (begin
+                      (yaml-parser-set-input-string p str)
+                      (yaml-parser-parse p))
+      (yaml-fini p))))
+
+(test* "yaml-parser-parse (mapping)"
+       '((("foo" . "3") ("bar" . "baz")))
+       (parse-string "foo: 3\nbar: baz\n"))
+
+(test* "yaml-parser-parse (sequence)"
+       '(#("a" "b" "c"))
+       (parse-string "- a\n- b\n- c\n"))
+
+(test* "yaml-parser-parse (nested)"
+       '(#((("foo" . "1") ("bar" . #("a" "b"))) "baz"))
+       (parse-string "- foo: 1\n  bar: [a, b]\n- baz\n"))
+
+(test* "yaml-parser-parse (multiple documents)"
+       '("a" #("b"))
+       (parse-string "--- a\n--- [b]\n"))
+
+(test* "yaml-parser-parse (empty stream)"
+       '()
+       (parse-string ""))
+
+(test* "yaml-parser-parse (alias)"
+       (test-error <error> #/alias is not supported/)
+       (parse-string "a: &x 1\nb: *x\n"))
 
 (test* "yaml-parser-load"
        (list (make <yaml-mark> :index 0 :line 0 :column 0)
