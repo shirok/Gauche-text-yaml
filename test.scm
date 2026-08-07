@@ -28,9 +28,9 @@
        '(YAML_STREAM_START_TOKEN
          YAML_BLOCK_MAPPING_START_TOKEN
          YAML_KEY_TOKEN
-         YAML_SCALAR_TOKEN
+         (YAML_SCALAR_TOKEN . "foo")
          YAML_VALUE_TOKEN
-         YAML_SCALAR_TOKEN
+         (YAML_SCALAR_TOKEN . "3")
          YAML_BLOCK_END_TOKEN
          YAML_STREAM_END_TOKEN
          YAML_NO_TOKEN)
@@ -40,9 +40,37 @@
          (yaml-parser-set-input-string p "foo: 3")
          (let loop ()
            (yaml-parser-scan! p t)
-           (push! r (yaml-token-type-name (~ t'type)))
+           (push! r (if (= (~ t'type) YAML_SCALAR_TOKEN)
+                      (cons (yaml-token-type-name (~ t'type))
+                            (yaml-token-scalar-value t))
+                      (yaml-token-type-name (~ t'type))))
            (unless (= (~ t'type) YAML_NO_TOKEN)
              (loop)))
+         (reverse r)))
+
+(test* "yaml-parser-parse"
+       '(YAML_STREAM_START_EVENT
+         YAML_DOCUMENT_START_EVENT
+         YAML_MAPPING_START_EVENT
+         (YAML_SCALAR_EVENT . "foo")
+         (YAML_SCALAR_EVENT . "3")
+         YAML_MAPPING_END_EVENT
+         YAML_DOCUMENT_END_EVENT
+         YAML_STREAM_END_EVENT)
+       (let ([p (make <yaml-parser>)]
+             [e (make <yaml-event>)]
+             [r '()])
+         (yaml-parser-set-input-string p "foo: 3")
+         (let loop ()
+           (yaml-parser-parse! p e)
+           (push! r (if (= (~ e'type) YAML_SCALAR_EVENT)
+                      (cons (yaml-event-type-name (~ e'type))
+                            (yaml-event-scalar-value e))
+                      (yaml-event-type-name (~ e'type))))
+           (let1 last? (= (~ e'type) YAML_STREAM_END_EVENT)
+             (yaml-event-delete! e)
+             (unless last? (loop))))
+         (yaml-fini p)
          (reverse r)))
 
 (test* "yaml-parser-load"

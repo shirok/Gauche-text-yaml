@@ -38,6 +38,24 @@
           YAML_SCALAR_TOKEN
           yaml-token-type-name
           yaml-token-type-value
+          yaml-token-scalar-value
+
+          <yaml-event>
+          YAML_NO_EVENT
+          YAML_STREAM_START_EVENT
+          YAML_STREAM_END_EVENT
+          YAML_DOCUMENT_START_EVENT
+          YAML_DOCUMENT_END_EVENT
+          YAML_ALIAS_EVENT
+          YAML_SCALAR_EVENT
+          YAML_SEQUENCE_START_EVENT
+          YAML_SEQUENCE_END_EVENT
+          YAML_MAPPING_START_EVENT
+          YAML_MAPPING_END_EVENT
+          yaml-event-type-name
+          yaml-event-type-value
+          yaml-event-scalar-value
+          yaml-event-delete!
 
           <yaml-document>
 
@@ -45,6 +63,7 @@
           yaml-parser-active?
           yaml-parser-set-input-string
           yaml-parser-scan!
+          yaml-parser-parse!
           yaml-parser-load)
   )
 (select-module text.yaml)
@@ -203,6 +222,7 @@
 (define-type yaml_sequence_style_t <int>)    ;enum
 (define-type yaml_mapping_style_t <int>)     ;enum
 (define-type yaml_token_type_t <int>)        ;enum
+(define-type yaml_event_type_t <int>)        ;enum
 (define-type yaml_node_type_t <int>)         ;enum
 (define-type yaml_node_item_t <int>)
 (define-type yaml_error_type_t <int>)        ;enum
@@ -263,41 +283,84 @@
 (define (yaml-token-type-value token-type-name)
   (bimap-left-get *yaml-token-type-map* token-type-name))
 
+;; Returns the scalar value of TOKEN as a string.  TOKEN must be
+;; a scalar token.
+(define (yaml-token-scalar-value token)
+  (assume-type token <yaml-token>)
+  (unless (= (~ token'type) YAML_SCALAR_TOKEN)
+    (error "yaml scalar token required, but got:" token))
+  (let1 h (wrapped-handle token)
+    (c-char*->string (native. h 'data 'scalar 'value)
+                     (native. h 'data 'scalar 'length))))
+
 (define-type yaml_event_t
   (native-type
    `(.struct
      yaml_event_s
-     (data::(.union
-             (stream_start::(.struct (encoding::,yaml_encoding_t))
-              document_start::(.struct
-                               (version_directive::(,yaml_version_directive_t *)
-                                tag_directives::(.struct
-                                                 (start::(,yaml_tag_directive_t *)
-                                                  end::(,yaml_tag_directive_t *)))
-                                implicit::int))
-              docuemnt_end::(.struct (implicit::int))
-              alias::(.struct (anchor::,yaml_char_t*))
-              scalar::(.struct
-                       (anchor::,yaml_char_t*
-                        tag::,yaml_char_t*
-                        value::,yaml_char_t*
-                        length::size_t
-                        plain_implicit::int
-                        quoted_implicit::int
-                        style::,yaml_scalar_style_t))
-              sequence_start::(.struct
+     (type::,yaml_event_type_t
+      data::(.union
+              (stream_start::(.struct (encoding::,yaml_encoding_t))
+               document_start::(.struct
+                                (version_directive::(,yaml_version_directive_t *)
+                                 tag_directives::(.struct
+                                                  (start::(,yaml_tag_directive_t *)
+                                                   end::(,yaml_tag_directive_t *)))
+                                 implicit::int))
+               document_end::(.struct (implicit::int))
+               alias::(.struct (anchor::,yaml_char_t*))
+               scalar::(.struct
+                        (anchor::,yaml_char_t*
+                         tag::,yaml_char_t*
+                         value::,yaml_char_t*
+                         length::size_t
+                         plain_implicit::int
+                         quoted_implicit::int
+                         style::,yaml_scalar_style_t))
+               sequence_start::(.struct
+                                (anchor::,yaml_char_t*
+                                 tag::,yaml_char_t*
+                                 implicit::int
+                                 style::,yaml_sequence_style_t))
+               mapping_start::(.struct
                                (anchor::,yaml_char_t*
                                 tag::,yaml_char_t*
                                 implicit::int
-                                style::,yaml_sequence_style_t))
-              mapping_start::(.struct
-                              (anchor::,yaml_char_t*
-                               tag::,yaml_char_t*
-                               implicit::int
-                               style::,yaml_mapping_style_t))))
+                                style::,yaml_mapping_style_t))))
       start_mark::,yaml_mark_t
       end_mark::,yaml_mark_t))))
 (define-type yaml_event_t* (make-c-pointer-type yaml_event_t))
+
+(define-native-wrapper-class <yaml-event> yaml_event_t)
+
+(define *yaml-event-type-map*
+  (rlet1 m (make-bimap (make-hash-table 'eqv?) (make-hash-table 'eqv?))
+    (for-each (^p (bimap-put! m (car p) (cdr p)))
+              `((YAML_NO_EVENT . ,YAML_NO_EVENT)
+                (YAML_STREAM_START_EVENT . ,YAML_STREAM_START_EVENT)
+                (YAML_STREAM_END_EVENT . ,YAML_STREAM_END_EVENT)
+                (YAML_DOCUMENT_START_EVENT . ,YAML_DOCUMENT_START_EVENT)
+                (YAML_DOCUMENT_END_EVENT . ,YAML_DOCUMENT_END_EVENT)
+                (YAML_ALIAS_EVENT . ,YAML_ALIAS_EVENT)
+                (YAML_SCALAR_EVENT . ,YAML_SCALAR_EVENT)
+                (YAML_SEQUENCE_START_EVENT . ,YAML_SEQUENCE_START_EVENT)
+                (YAML_SEQUENCE_END_EVENT . ,YAML_SEQUENCE_END_EVENT)
+                (YAML_MAPPING_START_EVENT . ,YAML_MAPPING_START_EVENT)
+                (YAML_MAPPING_END_EVENT . ,YAML_MAPPING_END_EVENT)))))
+
+(define (yaml-event-type-name event-type)
+  (bimap-right-get *yaml-event-type-map* event-type))
+(define (yaml-event-type-value event-type-name)
+  (bimap-left-get *yaml-event-type-map* event-type-name))
+
+;; Returns the scalar value of EVENT as a string.  EVENT must be
+;; a scalar event.
+(define (yaml-event-scalar-value event)
+  (assume-type event <yaml-event>)
+  (unless (= (~ event'type) YAML_SCALAR_EVENT)
+    (error "yaml scalar event required, but got:" event))
+  (let1 h (wrapped-handle event)
+    (c-char*->string (native. h 'data 'scalar 'value)
+                     (native. h 'data 'scalar 'length))))
 
 (define-type yaml_node_pair_t
   (native-type
@@ -643,6 +706,17 @@
   (call-yaml %yaml-parser-scan
              (%parser-handle parser)
              (wrapped-handle token)))
+
+(define (yaml-parser-parse! parser event)
+  (assume-type event <yaml-event>)
+  (call-yaml %yaml-parser-parse
+             (%parser-handle parser)
+             (wrapped-handle event)))
+
+;; Releases the data the event holds.  The event itself can be reused.
+(define (yaml-event-delete! event)
+  (assume-type event <yaml-event>)
+  (%yaml-event-delete (wrapped-handle event)))
 
 (define (yaml-parser-load parser)
   (let ([doc (make-native-handle yaml_document_t)]
