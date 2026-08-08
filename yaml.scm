@@ -62,6 +62,7 @@
           <yaml-parser>
           yaml-parser-active?
           yaml-parser-set-input-string
+          yaml-parser-set-input-port
           yaml-parser-scan!
           yaml-parser-parse!
           yaml-parser-parse
@@ -647,14 +648,8 @@
       (const unsigned char*)
       size_t) <void>)
 
-  (define-c-function %yaml-parser-set-input-file
-    `(,yaml_parser_t*
-      (,FILE *)) <void>)  ;; NB: not sure how we expose FILE*.
-
-  (define-c-function %yaml-parser-set-input
-    `(,yaml_parser_t*
-      (,yaml_read_handler_t *)
-      void*) <void>)
+  ;; We don't provide yaml_parser_set_input_file and yaml_parser_set_input
+  ;; Scheme-friendly yaml-parser-set-input-port is defined below
 
   (define-c-function %yaml-parser-set-encoding
     `(,yaml_parser_t*
@@ -704,6 +699,33 @@
     (%yaml-parser-set-input-string (%parser-handle parser)
                                    h
                                    (string-size string))))
+
+(inline-stub
+ (define-cfn %yaml-parser-reader-cb (data::void*
+                                     buffer::u_char*
+                                     size::size_t
+                                     size_read::size_t*)
+   ::int
+   (let* ([port::ScmPort* (cast ScmPort* data)]
+          [nread::ScmSize (Scm_Getz (cast char* buffer) size port)])
+     (if (== nread EOF)
+       (set! (* size_read) 0)
+       (set! (* size_read) nread))
+     ;; TODO: probably we should catch Scheme error and return 0.
+     (return 1)))
+ )
+
+(define-cproc %yaml-parser-set-input-port (parser
+                                           port::<input-port>)
+  ::<void>
+  (let* ([p::yaml_parser_t*
+          (Scm_NativeHandlePtr (SCM_NATIVE_HANDLE parser))])
+    (yaml_parser_set_input p %yaml-parser-reader-cb port)))
+
+(define (yaml-parser-set-input-port parser port)
+  (assume-type parser <yaml-parser>)
+  (assume-type port <input-port>)
+  (%yaml-parser-set-input-port (~ parser'%parser) port))
 
 (define (yaml-parser-scan! parser token)
   (assume-type token <yaml-token>)
