@@ -66,7 +66,9 @@
           yaml-parser-scan!
           yaml-parser-parse!
           yaml-parser-parse
-          yaml-parser-load)
+          yaml-parser-load
+
+          yaml-parse-file)
   )
 (select-module text.yaml)
 
@@ -802,6 +804,16 @@
         [p (%parser-handle parser)])
     (call-yaml %yaml-parser-load p doc)
     (wrap-native-handle doc)))
+
+;; High-level utility
+
+(define (yaml-parse-file file)
+  (let ([parser (make <yaml-parser>)])
+    (unwind-protect
+        (call-with-input-file file
+          (^p (yaml-parser-set-input-port parser p)
+              (yaml-parser-parse parser)))
+      (yaml-fini parser))))
 
 ;; Local variables:
 ;; mode: scheme
