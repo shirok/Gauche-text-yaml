@@ -853,7 +853,9 @@
 (define-class <yaml-parser> ()
   ((%parser :init-form #f)
    ;; Maps anchor names to Scheme objs
-   (%anchors :init-form (make-hash-table 'string=?))))
+   (%anchors :init-form (make-hash-table 'string=?))
+   ;; Keeps the input (port/string) reference to prevent it from GC-ed.
+   (%input :init-form #f)))
 
 (define-method initialize ((p <yaml-parser>) initargs)
   (next-method)
@@ -869,7 +871,8 @@
   (and-let1 handle (~ p'%parser)
     (%yaml-parser-delete handle)
     (set! (~ p'%parser) #f)
-    (set! (~ p'%anchors) #f)))          ;GC friendly
+    (set! (~ p'%anchors) #f)            ;GC friendly
+    (set! (~ p'%input) #f)))
 
 ;; Anchor table.  An anchor is only visible within the document that
 ;; defines it, so the table is cleared at each document start.
@@ -895,11 +898,11 @@
 (define (yaml-parser-set-input-string parser string)
   ;; NB: make-native-handle doesn't take an empty string.  We pass a dummy
   ;; buffer instead; libyaml won't look at it, for the size is zero.
-  (let1 h (make-native-handle (native-type '(const unsigned char*))
-                              (if (equal? string "") " " string))
-    (%yaml-parser-set-input-string (%parser-handle parser)
-                                   h
-                                   (string-size string))))
+  (let ([p (%parser-handle parser)]
+        [h (make-native-handle (native-type '(const unsigned char*))
+                               (if (equal? string "") " " string))])
+    (set! (~ parser'%input) h)
+    (%yaml-parser-set-input-string p h (string-size string))))
 
 (inline-stub
  (define-cfn %yaml-parser-reader-cb (data::void*
@@ -924,9 +927,10 @@
     (yaml_parser_set_input p %yaml-parser-reader-cb port)))
 
 (define (yaml-parser-set-input-port parser port)
-  (assume-type parser <yaml-parser>)
   (assume-type port <input-port>)
-  (%yaml-parser-set-input-port (~ parser'%parser) port))
+  (let1 p (%parser-handle parser)
+    (set! (~ parser'%input) port)
+    (%yaml-parser-set-input-port p port)))
 
 (define (yaml-parser-scan! parser token)
   (assume-type token <yaml-token>)

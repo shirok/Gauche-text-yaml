@@ -80,6 +80,13 @@
                       (yaml-parser-parse p))
       (yaml-fini p))))
 
+(define (parse-port port)
+  (let1 p (make <yaml-parser>)
+    (unwind-protect (begin
+                      (yaml-parser-set-input-port p port)
+                      (yaml-parser-parse p))
+      (yaml-fini p))))
+
 (test* "yaml-parser-parse (mapping)"
        '((("foo" . 3) ("bar" . "baz")))
        (parse-string "foo: 3\nbar: baz\n"))
@@ -99,6 +106,21 @@
 (test* "yaml-parser-parse (empty stream)"
        '()
        (parse-string ""))
+
+;; Ensure memory associated to the input is retained across GC.
+;; The pointers passed to yaml API won't be scanned; if we don't hold
+;; the reference to the handle/port in <yaml-parser>, the memory would
+;; be reclaimed while parser is running.
+(let* ([n 5000]
+       [src (string-join (map (^i #"k~|i|: ~i") (iota n)) "\n")])
+  (test* "yaml-parser-parse (input larger than libyaml's buffer)"
+         `(5000 ("k0" . 0) ("k4999" . 4999))
+         (let1 doc (car (parse-string src))
+           (list (length doc) (car doc) (last doc))))
+  (test* "yaml-parser-parse (large input, from a port)"
+         `(5000 ("k0" . 0) ("k4999" . 4999))
+         (let1 doc (car (parse-port (open-input-string src)))
+           (list (length doc) (car doc) (last doc)))))
 
 (test-section "aliases")
 
