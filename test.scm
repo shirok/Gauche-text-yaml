@@ -100,9 +100,87 @@
        '()
        (parse-string ""))
 
-(test* "yaml-parser-parse (alias)"
-       (test-error <error> #/alias is not supported/)
+(test-section "aliases")
+
+(test* "alias (scalar)"
+       '((("a" . 1) ("b" . 1)))
        (parse-string "a: &x 1\nb: *x\n"))
+
+(test* "alias (empty scalar)"
+       '((("a" . null) ("b" . null)))
+       (parse-string "a: &n\nb: *n\n"))
+
+(test* "alias (sequence)"
+       '((("a" . #(1 2)) ("b" . #(1 2))))
+       (parse-string "a: &x [1, 2]\nb: *x\n"))
+
+(test* "alias (mapping)"
+       '((("a" ("x" . 1)) ("b" ("x" . 1))))
+       (parse-string "a: &x {x: 1}\nb: *x\n"))
+
+;; The aliased node is shared, not copied.
+(test* "alias (shares the node)" #t
+       (let1 doc (car (parse-string "a: &x [1, 2]\nb: *x\n"))
+         (eq? (cdr (assoc "a" doc)) (cdr (assoc "b" doc)))))
+
+(test* "alias (as a mapping key)"
+       '((("key" . 1) ("key" . 2)))
+       (parse-string "&k key: 1\n? *k\n: 2\n"))
+
+;; An anchor may be redefined; an alias refers to the most recent one.
+(test* "alias (anchor redefined)"
+       '(#(1 1 2 2))
+       (parse-string "[&a 1, *a, &a 2, *a]"))
+
+(test* "alias (undefined anchor)"
+       (test-error <error> #/Undefined YAML alias/)
+       (parse-string "a: *nope\n"))
+
+;; An anchor is only visible within the document that defines it.
+(test* "alias (anchor doesn't cross documents)"
+       (test-error <error> #/Undefined YAML alias/)
+       (parse-string "--- &a 1\n--- *a\n"))
+
+;; An alias only has to refer to an anchor that occurs earlier, not to one
+;; whose node is complete, so a node may be its own descendant.  The result
+;; is circular, and neither `equal?' nor the test log's `write' can be let
+;; near it, so these compare with `eq?' and report a boolean.
+
+(test* "alias (recursive sequence)" #t
+       (let1 v (car (parse-string "&a [*a]"))
+         (and (vector? v)
+              (= (vector-length v) 1)
+              (eq? (vector-ref v 0) v))))
+
+(test* "alias (recursive mapping)" #t
+       (let1 m (car (parse-string "&a {x: *a}"))
+         (eq? (cdr (assoc "x" m)) m)))
+
+(test* "alias (recursive, one level down)" #t
+       (let1 v (car (parse-string "&a [[*a]]"))
+         (eq? (vector-ref (vector-ref v 0) 0) v)))
+
+;; A recursive node as a mapping key is fine here---we don't hash keys.
+(test* "alias (recursive mapping key)" #t
+       (let1 m (car (parse-string "&a {*a: 1}"))
+         (eq? (caar m) m)))
+
+;; *b's node is complete by the time it's referred to, while *a's isn't.
+(test* "alias (recursion through an inner anchor)" #t
+       (let1 v (car (parse-string "&a [&b [*a], *b]"))
+         (and (eq? (vector-ref v 0) (vector-ref v 1))
+              (eq? (vector-ref (vector-ref v 0) 0) v))))
+
+;; The mutual case: neither node is complete when it's referred to.
+(test* "alias (mutual recursion)" #t
+       (let1 m (car (parse-string "&a {b: &b {a: *a}}"))
+         (let1 b (cdr (assoc "b" m))
+           (eq? (cdr (assoc "a" b)) m))))
+
+;; A recursive node in one document mustn't disturb the next one.
+(test* "alias (recursion doesn't leak into the next document)"
+       '#("x")
+       (cadr (parse-string "--- &a [*a]\n--- [x]\n")))
 
 (test-section "scalar resolution")
 
@@ -277,6 +355,9 @@
     ("2.9.yaml"
      ((("hr" . #("Mark McGwire" "Sammy Sosa"))
        ("rbi" . #("Sammy Sosa" "Ken Griffey")))))
+    ("2.10.yaml"
+     ((("hr" . #("Mark McGwire" "Sammy Sosa"))
+       ("rbi" . #("Sammy Sosa" "Ken Griffey")))))
     ("2.11.yaml"
      (((#("Detroit Tigers" "Chicago cubs") . #("2001-07-23"))
        (#("New York Yankees" "Atlanta Braves")
@@ -326,11 +407,36 @@
        ("application specific tag"
         . "The semantics of the tag\nabove may be different for\n\
            different documents.\n"))))
+    ("2.24.yaml"
+     (#((("center" ("x" . 73) ("y" . 129)) ("radius" . 7))
+        (("start" ("x" . 73) ("y" . 129))
+         ("finish" ("x" . 89) ("y" . 102)))
+        (("start" ("x" . 73) ("y" . 129)) ("color" . 16772795)
+         ("text" . "Pretty vector drawing.")))))
     ("2.25.yaml"
      ((("Mark McGwire" . null) ("Sammy Sosa" . null) ("Ken Griffey" . null))))
     ("2.26.yaml"
      (#((("Mark McGwire" . 65)) (("Sammy Sosa" . 63))
         (("Ken Griffey" . 58)))))
+    ("2.27.yaml"
+     ((("invoice" . 34843)
+       ("date" . "2001-01-23")
+       ("bill-to" ("given" . "Chris") ("family" . "Dumars")
+                  ("address" ("lines" . "458 Walkman Dr.\nSuite #292\n")
+                             ("city" . "Royal Oak") ("state" . "MI")
+                             ("postal" . 48046)))
+       ("ship-to" ("given" . "Chris") ("family" . "Dumars")
+                  ("address" ("lines" . "458 Walkman Dr.\nSuite #292\n")
+                             ("city" . "Royal Oak") ("state" . "MI")
+                             ("postal" . 48046)))
+       ("product" . #((("sku" . "BL394D") ("quantity" . 4)
+                       ("description" . "Basketball") ("price" . 450.0))
+                      (("sku" . "BL4438H") ("quantity" . 1)
+                       ("description" . "Super Hoop") ("price" . 2392.0))))
+       ("tax" . 251.42)
+       ("total" . 4443.52)
+       ("comments" . "Late afternoon is best. \
+                      Backup contact is Nancy Billsmer @ 338-4338."))))
     ("2.28.yaml"
      ((("Time" . "2001-11-23 15:01:42 -5") ("User" . "ed")
        ("Warning" . "This is an error message for the log file"))
@@ -344,23 +450,22 @@
                      ("code" . "foo = bar")))))))
     ))
 
-;; These examples use aliases, which we don't support yet.
-(define *unsupported-examples* '("2.10.yaml" "2.24.yaml" "2.27.yaml"))
-
 (dolist [e *examples*]
   (test* #"yaml-parse-file ~(car e)" (cadr e)
          (yaml-parse-file (build-path *example-dir* (car e)))))
 
-(dolist [f *unsupported-examples*]
-  (test* #"yaml-parse-file ~f (alias)"
-         (test-error <error> #/alias is not supported/)
-         (yaml-parse-file (build-path *example-dir* f))))
-
-;; Guard against an example file that's neither tested nor listed as skipped.
+;; Guard against an example file that's not tested.
 (test* "all example files are accounted for" '()
-       (let1 covered (append (map car *examples*) *unsupported-examples*)
+       (let1 covered (map car *examples*)
          (filter (^f (not (member f covered)))
                  (sort (map sys-basename
                             (glob (build-path *example-dir* "*.yaml")))))))
+
+;; 2.27 aliases a mapping twice; the alias must yield the very node the
+;; anchor labels, not a copy of it.
+(test* "yaml-parse-file 2.27.yaml (alias shares the node)" #t
+       (let1 doc (car (yaml-parse-file
+                       (build-path *example-dir* "2.27.yaml")))
+         (eq? (cdr (assoc "bill-to" doc)) (cdr (assoc "ship-to" doc)))))
 
 (test-end :exit-on-failure #t)

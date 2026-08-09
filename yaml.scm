@@ -7,6 +7,7 @@
   (use gauche.native-type)
   (use gauche.ffi)
   (use gauche.record)
+  (use scheme.box)
   (export yaml-get-version-string
           yaml-get-version
 
@@ -56,6 +57,7 @@
           yaml-event-type-name
           yaml-event-type-value
           yaml-event-scalar-value
+          yaml-event-anchor
           yaml-event-delete!
 
           <yaml-schema>
@@ -83,6 +85,9 @@
 
           <yaml-parser>
           yaml-parser-active?
+          yaml-parser-anchor-ref
+          yaml-parser-anchor-set!
+          yaml-parser-anchor-clear!
           yaml-parser-set-input-string
           yaml-parser-set-input-port
           yaml-parser-scan!
@@ -570,6 +575,27 @@
     (cond [(assoc tag (yaml-schema-constructors schema)) => (^p ((cdr p) val))]
           [else val])))
 
+;; Returns the anchor of EVENT as a string, or #f if it has none.
+;; A scalar, sequence start or mapping start event carries the anchor
+;; the node is labeled with; an alias event carries the anchor it refers
+;; to.  No other event has an anchor.
+(define (yaml-event-anchor event)
+  (assume-type event <yaml-event>)
+  (let* ([type (~ event'type)]
+         [h (wrapped-handle event)]
+         [p (cond [(= type YAML_SCALAR_EVENT)
+                   (native. h 'data 'scalar 'anchor)]
+                  [(= type YAML_SEQUENCE_START_EVENT)
+                   (native. h 'data 'sequence_start 'anchor)]
+                  [(= type YAML_MAPPING_START_EVENT)
+                   (native. h 'data 'mapping_start 'anchor)]
+                  [(= type YAML_ALIAS_EVENT)
+                   (native. h 'data 'alias 'anchor)]
+                  [else #f])])
+    (and p
+         (not (null-pointer-handle? p))
+         (c-char*->string p))))
+
 ;; NB: We define yaml_node and yaml_document related types, but we don't
 ;; really provide API to deal with it.  We can use yaml_event layer directly
 ;; to provide high-level API (e.g. yaml-parse-file).
@@ -825,7 +851,9 @@
   )
 
 (define-class <yaml-parser> ()
-  ((%parser :init-form #f)))
+  ((%parser :init-form #f)
+   ;; Maps anchor names to Scheme objs
+   (%anchors :init-form (make-hash-table 'string=?))))
 
 (define-method initialize ((p <yaml-parser>) initargs)
   (next-method)
@@ -840,7 +868,24 @@
 (define-method yaml-fini ((p <yaml-parser>))
   (and-let1 handle (~ p'%parser)
     (%yaml-parser-delete handle)
-    (set! (~ p'%parser) #f)))
+    (set! (~ p'%parser) #f)
+    (set! (~ p'%anchors) #f)))          ;GC friendly
+
+;; Anchor table.  An anchor is only visible within the document that
+;; defines it, so the table is cleared at each document start.
+(define (yaml-parser-anchor-ref parser name :optional (fallback #f))
+  (hash-table-get (%anchor-table parser) name fallback))
+
+(define (yaml-parser-anchor-set! parser name obj)
+  (hash-table-put! (%anchor-table parser) name obj))
+
+(define (yaml-parser-anchor-clear! parser)
+  (hash-table-clear! (%anchor-table parser)))
+
+(define (%anchor-table parser)
+  (assume-type parser <yaml-parser>)
+  (or (~ parser'%anchors)
+      (error "YAML parser has already been deleted:" parser)))
 
 (define (%parser-handle parser)
   (assume-type parser <yaml-parser>)
@@ -900,6 +945,30 @@
   (assume-type event <yaml-event>)
   (%yaml-event-delete (wrapped-handle event)))
 
+;; Using anchors and aliases, YAML's data structure can form a cyclic graph.
+;; To realize it, we use a box when we encounter an anchor, and after the
+;; whole document is read, we walk the structure to remove intermediate
+;; boxes.
+(define (%yaml-splice-placeholders doc)
+  (define seen (make-hash-table 'eq?))
+  (define (deref x) (if (box? x) (unbox x) x))
+  (define (walk x)
+    (let loop ([x x])
+      (cond [(pair? x)
+             (unless (hash-table-contains? seen x)
+               (hash-table-put! seen x #t)
+               (let1 a (deref (car x)) (set-car! x a) (walk a))
+               (let1 d (deref (cdr x)) (set-cdr! x d) (loop d)))]
+            [(vector? x)
+             (unless (hash-table-contains? seen x)
+               (hash-table-put! seen x #t)
+               (dotimes [i (vector-length x)]
+                 (let1 v (deref (vector-ref x i))
+                   (vector-set! x i v)
+                   (walk v))))])))
+  (rlet1 root (deref doc)
+    (walk root)))
+
 ;; Reads the entire yaml stream from PARSER, and returns a list of
 ;; documents, each of which is an S-expression representation of the
 ;; document:
@@ -909,48 +978,85 @@
 ;;   A sequence is a vector of its items.
 ;;   A mapping is an assoc list of its key and value.
 (define (yaml-parser-parse parser)
-  (let1 event (make <yaml-event>)
-    ;; Reads the next event, and returns its type and, if it is a scalar
-    ;; event, its value.  The event data is released before returning, so
-    ;; the caller must not touch EVENT itself.
+  (let ([event (make <yaml-event>)]
+        ;; Set when an alias hands out a box.
+        [recursive? #f])
+    ;; Reads the next event, and returns its type, its value if it is a
+    ;; scalar event, and its anchor if it has one.  The event data is
+    ;; released before returning, so the caller must not touch EVENT
+    ;; itself.
     (define (next!)
       (yaml-parser-parse! parser event)
       (let* ([type (~ event'type)]
              [val (and (= type YAML_SCALAR_EVENT)
-                       (yaml-event-scalar-value event))])
+                       (yaml-event-scalar-value event))]
+             [anchor (yaml-event-anchor event)])
         (yaml-event-delete! event)
-        (values type val)))
+        (values type val anchor)))
     (define (unexpected type)
       (errorf "Unexpected yaml event: ~a" (yaml-event-type-name type)))
-    (define (node type val)
-      (cond [(= type YAML_SCALAR_EVENT) val]
-            [(= type YAML_SEQUENCE_START_EVENT) (sequence '())]
-            [(= type YAML_MAPPING_START_EVENT) (mapping '())]
-            [(= type YAML_ALIAS_EVENT) (error "YAML alias is not supported")]
+    ;; Binds ANCHOR, if the node carries one, to OBJ, and returns OBJ.
+    (define (anchor! anchor obj)
+      (when anchor (yaml-parser-anchor-set! parser anchor obj))
+      obj)
+    (define (alias anchor)
+      (let1 obj (yaml-parser-anchor-ref parser anchor (undefined))
+        (when (undefined? obj)
+          (errorf "Undefined YAML alias: *~a" anchor))
+        (when (box? obj)                ;the node isn't complete yet
+          (set! recursive? #t))
+        obj))
+    ;; A collection's anchor is bound as soon as the node begins, so that
+    ;; an alias inside it has something to refer to; until the node is
+    ;; complete, that something can only be a box.
+    (define (collection anchor build)
+      (if (not anchor)
+        (build '())
+        (let1 ph (box #f)
+          (yaml-parser-anchor-set! parser anchor ph)
+          (rlet1 obj (build '())
+            (set-box! ph obj)
+            ;; The node may have redefined its own anchor, in which case
+            ;; the inner definition is the one a later alias should see.
+            (when (eq? (yaml-parser-anchor-ref parser anchor) ph)
+              (yaml-parser-anchor-set! parser anchor obj))))))
+    (define (node type val anchor)
+      (cond [(= type YAML_SCALAR_EVENT) (anchor! anchor val)]
+            [(= type YAML_SEQUENCE_START_EVENT) (collection anchor sequence)]
+            [(= type YAML_MAPPING_START_EVENT) (collection anchor mapping)]
+            [(= type YAML_ALIAS_EVENT) (alias anchor)]
             [else (unexpected type)]))
     (define (sequence items)
-      (receive (type val) (next!)
+      (receive (type val anchor) (next!)
         (if (= type YAML_SEQUENCE_END_EVENT)
           (list->vector (reverse items))
-          (sequence (cons (node type val) items)))))
+          (sequence (cons (node type val anchor) items)))))
     (define (mapping pairs)
-      (receive (type val) (next!)
+      (receive (type val anchor) (next!)
         (if (= type YAML_MAPPING_END_EVENT)
           (reverse pairs)
-          (let1 k (node type val)
-            (receive (type val) (next!)
-              (mapping (acons k (node type val) pairs)))))))
+          (let1 k (node type val anchor)
+            (receive (type val anchor) (next!)
+              (mapping (acons k (node type val anchor) pairs)))))))
     (define (documents docs)
-      (receive (type val) (next!)
+      (receive (type val anchor) (next!)
         (cond [(= type YAML_STREAM_END_EVENT) (reverse docs)]
               [(= type YAML_DOCUMENT_START_EVENT)
-               (let1 doc (receive (type val) (next!) (node type val))
-                 (receive (type val) (next!)
+               ;; An anchor is only visible within the document that
+               ;; defines it.
+               (yaml-parser-anchor-clear! parser)
+               (set! recursive? #f)
+               (let1 doc (receive (type val anchor) (next!)
+                           (node type val anchor))
+                 (receive (type val anchor) (next!)
                    (unless (= type YAML_DOCUMENT_END_EVENT)
                      (unexpected type))
-                   (documents (cons doc docs))))]
+                   (documents (cons (if recursive?
+                                      (%yaml-splice-placeholders doc)
+                                      doc)
+                                    docs))))]
               [else (unexpected type)])))
-    (receive (type val) (next!)
+    (receive (type val anchor) (next!)
       (unless (= type YAML_STREAM_START_EVENT)
         (unexpected type))
       (documents '()))))
