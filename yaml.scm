@@ -6,6 +6,7 @@
   (use gauche.dictionary)
   (use gauche.native-type)
   (use gauche.ffi)
+  (use gauche.record)
   (export yaml-get-version-string
           yaml-get-version
 
@@ -56,6 +57,29 @@
           yaml-event-type-value
           yaml-event-scalar-value
           yaml-event-delete!
+
+          <yaml-schema>
+          make-yaml-schema
+          yaml-schema?
+          yaml-schema-name
+          yaml-schema-resolvers
+          yaml-schema-constructors
+          yaml-schema
+          yaml-1.2-core-schema
+          yaml-1.1-schema
+          yaml-failsafe-schema
+          yaml-null-tag
+          yaml-bool-tag
+          yaml-int-tag
+          yaml-float-tag
+          yaml-str-tag
+          yaml-construct-null
+          yaml-1.2-construct-bool
+          yaml-1.2-construct-int
+          yaml-1.2-construct-float
+          yaml-1.1-construct-bool
+          yaml-1.1-construct-int
+          yaml-1.1-construct-float
 
           <yaml-document>
 
@@ -356,15 +380,198 @@
 (define (yaml-event-type-value event-type-name)
   (bimap-left-get *yaml-event-type-map* event-type-name))
 
-;; Returns the scalar value of EVENT as a string.  EVENT must be
-;; a scalar event.
+;;
+;; Scalar resolution
+;;
+
+;; libyaml doesn't resolve tags.  We follow PyYAML model to interpret
+;; tags and convert values.
+;; A <yaml-schema> holds the two tables that drive it:
+;;
+;;   resolvers    - ((tag . regexp) ...), consulted in order to find the
+;;                  tag of an untagged plain scalar.  A scalar that
+;;                  matches none of them is a string.
+;;   constructors - ((tag . proc) ...), where PROC maps the scalar's
+;;                  string value to a Scheme value.  A tag with no
+;;                  constructor---an application-specific one, say---
+;;                  leaves the value as a string.
+
+(define yaml-null-tag "tag:yaml.org,2002:null")
+(define yaml-bool-tag "tag:yaml.org,2002:bool")
+(define yaml-int-tag "tag:yaml.org,2002:int")
+(define yaml-float-tag "tag:yaml.org,2002:float")
+(define yaml-str-tag "tag:yaml.org,2002:str")
+
+(define-record-type <yaml-schema>
+  (make-yaml-schema name resolvers constructors)
+  yaml-schema?
+  (name yaml-schema-name)
+  (resolvers yaml-schema-resolvers)
+  (constructors yaml-schema-constructors))
+
+;; Resolution patterns of the YAML 1.2 core schema.  The int pattern
+;; must be tried before the float one, for the float pattern also
+;; matches an integer with neither point nor exponent.
+(define *yaml-null-rx* #/^(?:~|null|Null|NULL|)$/)
+(define *yaml-1.2-bool-rx* #/^(?:true|True|TRUE|false|False|FALSE)$/)
+(define *yaml-1.2-int-rx* #/^(?:[-+]?[0-9]+|0o[0-7]+|0x[0-9a-fA-F]+)$/)
+(define *yaml-1.2-float-rx*
+  #/^(?:[-+]?(?:\.[0-9]+|[0-9]+(?:\.[0-9]*)?)(?:[eE][-+]?[0-9]+)?|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/)
+
+;; A constructor may also be reached through an explicit tag, which
+;; bypasses the resolver, so each one validates its argument.
+
+(define (yaml-construct-null val) 'null) ;the value, if any, is ignored
+
+(define (yaml-1.2-construct-bool val)
+  (rxmatch-case val
+    [#/^(?:true|True|TRUE)$/ (#f) #t]
+    [#/^(?:false|False|FALSE)$/ (#f) #f]
+    [else (errorf "Invalid boolean scalar: ~s" val)]))
+
+(define (yaml-1.2-construct-int val)
+  (rxmatch-case val
+    [#/^0o([0-7]+)$/ (#f digits) (string->number digits 8)]
+    [#/^0x([0-9a-fA-F]+)$/ (#f digits) (string->number digits 16)]
+    [#/^[-+]?[0-9]+$/ (#f) (string->number val 10)]
+    [else (errorf "Invalid integer scalar: ~s" val)]))
+
+(define (yaml-1.2-construct-float val)
+  (rxmatch-case val
+    [#/^([-+]?)\.(?:inf|Inf|INF)$/ (#f sign)
+     (if (equal? sign "-") -inf.0 +inf.0)]
+    [#/^\.(?:nan|NaN|NAN)$/ (#f) +nan.0]
+    [else (or (and-let* ([n (string->number val)]) (exact->inexact n))
+              (errorf "Invalid float scalar: ~s" val))]))
+
+;; The YAML 1.2 core schema, which we use by default.
+(define yaml-1.2-core-schema
+  (make-yaml-schema 'core
+                    `((,yaml-null-tag . ,*yaml-null-rx*)
+                      (,yaml-bool-tag . ,*yaml-1.2-bool-rx*)
+                      (,yaml-int-tag . ,*yaml-1.2-int-rx*)
+                      (,yaml-float-tag . ,*yaml-1.2-float-rx*))
+                    `((,yaml-null-tag . ,yaml-construct-null)
+                      (,yaml-bool-tag . ,yaml-1.2-construct-bool)
+                      (,yaml-int-tag . ,yaml-1.2-construct-int)
+                      (,yaml-float-tag . ,yaml-1.2-construct-float))))
+
+;; YAML 1.1---the type repository at yaml.org/type/---recognizes a
+;; different set of plain scalars:
+;;
+;;   bool  - y/yes/on and n/no/off are booleans as well.
+;;   int   - octal is a leading 0 rather than 0o, there's base 2 and
+;;           base 60, and digits may be grouped with underscores.
+;;   float - underscores again, base 60, and the exponent must carry a
+;;           sign, so 1.5e3 is a *string* in 1.1.
+;;
+;; null is the same under both.  Two of these are silent traps when a
+;; 1.2 document is read as 1.1: 014 is 12 rather than 14, and a clock
+;; time like 20:03:20 is the integer 72200.
+;;
+;; The 1.1 repository also has the timestamp, binary, omap, set and
+;; pairs types and the merge (<<) and value (=) keys, none of which we
+;; resolve; timestamp is the notable omission.
+(define *yaml-1.1-bool-rx*
+  #/^(?:y|Y|yes|Yes|YES|n|N|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF)$/)
+(define *yaml-1.1-int-rx*
+  #/^(?:[-+]?0b[01_]+|[-+]?0[0-7_]+|[-+]?(?:0|[1-9][0-9_]*)|[-+]?0x[0-9a-fA-F_]+|[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+)$/)
+;; The spec's own base-10 pattern makes the digits before the point
+;; optional *and* allows no digits after it, so it matches a lone ".";
+;; we require a digit on one side or the other.
+(define *yaml-1.1-float-rx*
+  #/^(?:[-+]?(?:[0-9][0-9_]*\.[0-9_]*|\.[0-9_]+)(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$/)
+
+(define (%yaml-strip-underscores s) (regexp-replace-all #/_/ s ""))
+
+(define (%yaml-signed sign n) (if (equal? sign "-") (- n) n))
+
+;; Base 60, most significant first: 190:20:30 is 190*3600+20*60+30.
+(define (%yaml-sexagesimal digits)
+  (let loop ([ds (string-split digits #\:)] [n 0])
+    (if (null? ds)
+      n
+      (loop (cdr ds) (+ (* n 60) (string->number (car ds) 10))))))
+
+(define (yaml-1.1-construct-bool val)
+  (rxmatch-case val
+    [#/^(?:y|Y|yes|Yes|YES|true|True|TRUE|on|On|ON)$/ (#f) #t]
+    [#/^(?:n|N|no|No|NO|false|False|FALSE|off|Off|OFF)$/ (#f) #f]
+    [else (errorf "Invalid boolean scalar: ~s" val)]))
+
+(define (yaml-1.1-construct-int val)
+  (let1 s (%yaml-strip-underscores val)
+    (rxmatch-case s
+      [#/^([-+]?)0b([01]+)$/ (#f sign digits)
+       (%yaml-signed sign (string->number digits 2))]
+      [#/^([-+]?)0x([0-9a-fA-F]+)$/ (#f sign digits)
+       (%yaml-signed sign (string->number digits 16))]
+      [#/^([-+]?)0([0-7]+)$/ (#f sign digits)
+       (%yaml-signed sign (string->number digits 8))]
+      [#/^[-+]?(?:0|[1-9][0-9]*)$/ (#f) (string->number s 10)]
+      [#/^([-+]?)([1-9][0-9]*(?::[0-5]?[0-9])+)$/ (#f sign digits)
+       (%yaml-signed sign (%yaml-sexagesimal digits))]
+      [else (errorf "Invalid integer scalar: ~s" val)])))
+
+(define (yaml-1.1-construct-float val)
+  (let1 s (%yaml-strip-underscores val)
+    (rxmatch-case s
+      [#/^([-+]?)\.(?:inf|Inf|INF)$/ (#f sign)
+       (if (equal? sign "-") -inf.0 +inf.0)]
+      [#/^\.(?:nan|NaN|NAN)$/ (#f) +nan.0]
+      [#/^([-+]?)([0-9]+(?::[0-5]?[0-9])+)(\.[0-9]*)$/ (#f sign digits frac)
+       (%yaml-signed sign (+ (%yaml-sexagesimal digits)
+                             (string->number (string-append "0" frac))))]
+      [else (or (and-let* ([n (string->number s)]) (exact->inexact n))
+                (errorf "Invalid float scalar: ~s" val))])))
+
+(define yaml-1.1-schema
+  (make-yaml-schema 'yaml-1.1
+                    `((,yaml-null-tag . ,*yaml-null-rx*)
+                      (,yaml-bool-tag . ,*yaml-1.1-bool-rx*)
+                      (,yaml-int-tag . ,*yaml-1.1-int-rx*)
+                      (,yaml-float-tag . ,*yaml-1.1-float-rx*))
+                    `((,yaml-null-tag . ,yaml-construct-null)
+                      (,yaml-bool-tag . ,yaml-1.1-construct-bool)
+                      (,yaml-int-tag . ,yaml-1.1-construct-int)
+                      (,yaml-float-tag . ,yaml-1.1-construct-float))))
+
+;; The YAML 1.2 failsafe schema, under which every scalar is a string.
+(define yaml-failsafe-schema (make-yaml-schema 'failsafe '() '()))
+
+(define yaml-schema (make-parameter yaml-1.2-core-schema))
+
+;; Returns the tag SCHEMA resolves the plain scalar VAL to.
+(define (yaml-resolve-tag schema val)
+  (let loop ([rs (yaml-schema-resolvers schema)])
+    (cond [(null? rs) yaml-str-tag]
+          [((cdar rs) val) (caar rs)]
+          [else (loop (cdr rs))])))
+
+;; Returns the scalar value of EVENT, resolved according to the current
+;; yaml-schema.  EVENT must be a scalar event.
+;;
+;; Only a *plain* scalar without a tag is resolved implicitly; a quoted,
+;; literal or folded scalar is always a string, so "null" and '' stay
+;; strings while an empty plain scalar is null.  libyaml tells them
+;; apart with the plain_implicit flag, which is also 0 when the node
+;; carries an explicit tag.
 (define (yaml-event-scalar-value event)
   (assume-type event <yaml-event>)
   (unless (= (~ event'type) YAML_SCALAR_EVENT)
     (error "yaml scalar event required, but got:" event))
-  (let1 h (wrapped-handle event)
-    (c-char*->string (native. h 'data 'scalar 'value)
-                     (native. h 'data 'scalar 'length))))
+  (let* ([h (wrapped-handle event)]
+         [val (c-char*->string (native. h 'data 'scalar 'value)
+                               (native. h 'data 'scalar 'length))]
+         [schema (yaml-schema)]
+         [tag (cond [(let1 t (native. h 'data 'scalar 'tag)
+                       (and (not (null-pointer-handle? t))
+                            (c-char*->string t)))]
+                    [(= (native. h 'data 'scalar 'plain_implicit) 1)
+                     (yaml-resolve-tag schema val)]
+                    [else yaml-str-tag])])
+    (cond [(assoc tag (yaml-schema-constructors schema)) => (^p ((cdr p) val))]
+          [else val])))
 
 (define-type yaml_node_pair_t
   (native-type
@@ -749,7 +956,9 @@
 ;; Reads the entire yaml stream from PARSER, and returns a list of
 ;; documents, each of which is an S-expression representation of the
 ;; document:
-;;   A scalar is a string.
+;;   A scalar is whatever yaml-event-scalar-value resolves it to under
+;;     the current yaml-schema; with the default core schema, that is
+;;     the symbol null, a boolean, a number, or a string.
 ;;   A sequence is a vector of its items.
 ;;   A mapping is an assoc list of its key and value.
 (define (yaml-parser-parse parser)

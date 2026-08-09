@@ -53,7 +53,7 @@
          YAML_DOCUMENT_START_EVENT
          YAML_MAPPING_START_EVENT
          (YAML_SCALAR_EVENT . "foo")
-         (YAML_SCALAR_EVENT . "3")
+         (YAML_SCALAR_EVENT . 3)
          YAML_MAPPING_END_EVENT
          YAML_DOCUMENT_END_EVENT
          YAML_STREAM_END_EVENT)
@@ -81,7 +81,7 @@
       (yaml-fini p))))
 
 (test* "yaml-parser-parse (mapping)"
-       '((("foo" . "3") ("bar" . "baz")))
+       '((("foo" . 3) ("bar" . "baz")))
        (parse-string "foo: 3\nbar: baz\n"))
 
 (test* "yaml-parser-parse (sequence)"
@@ -89,7 +89,7 @@
        (parse-string "- a\n- b\n- c\n"))
 
 (test* "yaml-parser-parse (nested)"
-       '(#((("foo" . "1") ("bar" . #("a" "b"))) "baz"))
+       '(#((("foo" . 1) ("bar" . #("a" "b"))) "baz"))
        (parse-string "- foo: 1\n  bar: [a, b]\n- baz\n"))
 
 (test* "yaml-parser-parse (multiple documents)"
@@ -114,5 +114,264 @@
            (and (is-a? d <yaml-document>)
                 (list (~ d'start_mark)
                       (~ d'end_mark))))))
+
+(test-section "scalar resolution")
+
+(test* "null (implicit)"
+       '((("a" . null) ("b" . null) ("c" . null) ("d" . null) ("e" . null)))
+       (parse-string "a:\nb: ~\nc: null\nd: Null\ne: NULL\n"))
+
+(test* "null (explicit tag)"
+       '((("a" . null) ("b" . null)))
+       (parse-string "a: !!null\nb: !!null ignored\n"))
+
+;; Only a plain scalar is resolved implicitly.
+(test* "not null"
+       '((("a" . "") ("b" . "") ("c" . "null") ("d" . "~") ("e" . "")))
+       (parse-string "a: ''\nb: \"\"\nc: 'null'\nd: \"~\"\ne: !!str\n"))
+
+(test* "boolean (implicit)"
+       '((("a" . #t) ("b" . #t) ("c" . #t) ("d" . #f) ("e" . #f) ("f" . #f)))
+       (parse-string "a: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE\n"))
+
+(test* "boolean (explicit tag)"
+       '((("a" . #t) ("b" . #f)))
+       (parse-string "a: !!bool true\nb: !!bool FALSE\n"))
+
+(test* "boolean (invalid)"
+       (test-error <error> #/Invalid boolean scalar/)
+       (parse-string "a: !!bool maybe\n"))
+
+;; yes/no/on/off are YAML 1.1 booleans; the 1.2 core schema drops them.
+(test* "not boolean"
+       '((("a" . "yes") ("b" . "no") ("c" . "on")
+          ("d" . "true") ("e" . "true")))
+       (parse-string "a: yes\nb: no\nc: on\nd: 'true'\ne: \"true\"\n"))
+
+(test* "integer (implicit)"
+       '((("a" . 0) ("b" . 12345) ("c" . 12345) ("d" . -3)
+          ("e" . 12) ("f" . 12)))
+       (parse-string "a: 0\nb: 12345\nc: +12345\nd: -3\ne: 0o14\nf: 0xC\n"))
+
+(test* "float (implicit)"
+       '((("a" . 1230.15) ("b" . 1230.15) ("c" . 0.5) ("d" . 1.0)
+          ("e" . +inf.0) ("f" . -inf.0)))
+       (parse-string "a: 1.23015e+3\nb: 12.3015e+02\nc: .5\nd: 1.\n\
+                      e: .inf\nf: -.inf\n"))
+
+;; +nan.0 isn't equal? to itself, so check it apart from the rest.
+(test* "float (nan)" #t
+       (nan? (cdar (car (parse-string "a: .nan\n")))))
+
+(test* "number (explicit tag)"
+       '((("a" . 5) ("b" . 5.0) ("c" . "5")))
+       (parse-string "a: !!int 5\nb: !!float 5\nc: !!str 5\n"))
+
+(test* "number (invalid explicit tag)"
+       (test-error <error> #/Invalid integer scalar/)
+       (parse-string "a: !!int 1.5\n"))
+
+;; 0b1010, 12_345 and 1,234 are YAML 1.1 integers the core schema
+;; doesn't take.  014 is the nastier case: 1.1 reads it as octal 12,
+;; the core schema as plain decimal 14.
+(test* "not a number"
+       '((("a" . "0b1010") ("b" . "12_345") ("c" . 14) ("d" . "1,234")
+          ("e" . "5")))
+       (parse-string "a: 0b1010\nb: 12_345\nc: 014\nd: 1,234\ne: '5'\n"))
+
+;; Tags we don't resolve, and the non-specific tag "!".
+(test* "other tags stay strings"
+       '((("a" . "eA==") ("b" . "x") ("c" . "1")))
+       (parse-string "a: !!binary eA==\nb: !custom x\nc: ! 1\n"))
+
+(test-section "schemas")
+
+(test* "core schema is the default" 'core (yaml-schema-name (yaml-schema)))
+
+(test* "failsafe schema"
+       '((("a" . "1") ("b" . "true") ("c" . "") ("d" . "1.5") ("e" . "x")))
+       (parameterize ([yaml-schema yaml-failsafe-schema])
+         (parse-string "a: 1\nb: true\nc:\nd: 1.5\ne: !!null x\n")))
+
+(test* "1.1 schema (booleans)"
+       '((("a" . #t) ("b" . #f) ("c" . #t) ("d" . #f) ("e" . #t) ("f" . #f)))
+       (parameterize ([yaml-schema yaml-1.1-schema])
+         (parse-string "a: yes\nb: no\nc: on\nd: off\ne: y\nf: N\n")))
+
+(test* "1.1 schema (integers)"
+       '((("a" . 10) ("b" . 12345) ("c" . 255) ("d" . 685230)))
+       (parameterize ([yaml-schema yaml-1.1-schema])
+         (parse-string "a: 0b1010\nb: 12_345\nc: 0xF_F\nd: 190:20:30\n")))
+
+(test* "1.1 schema (floats)"
+       '((("a" . 1000.5) ("b" . 1500.0) ("c" . 685230.15)))
+       (parameterize ([yaml-schema yaml-1.1-schema])
+         (parse-string "a: 1_000.5\nb: 1.5e+3\nc: 190:20:30.15\n")))
+
+;; The two schemas read these four scalars differently, and only the
+;; 0o14 case is loud about it: 014 and 20:03:20 quietly change value.
+(let1 doc "a: 014\nb: 0o14\nc: 20:03:20\nd: yes\ne: 1.5e3\n"
+  (test* "1.1 schema (divergence from 1.2)"
+         '((("a" . 12) ("b" . "0o14") ("c" . 72200) ("d" . #t)
+            ("e" . "1.5e3")))
+         (parameterize ([yaml-schema yaml-1.1-schema]) (parse-string doc)))
+  (test* "1.2 core schema (divergence from 1.1)"
+         '((("a" . 14) ("b" . 12) ("c" . "20:03:20") ("d" . "yes")
+            ("e" . 1500.0)))
+         (parse-string doc)))
+
+;; A schema is extended by adding to its two tables: a resolver to give
+;; a plain scalar a tag, and a constructor to turn a tagged scalar into
+;; a Scheme value.
+(define my-schema
+  (make-yaml-schema 'my
+                    (cons '("!date" . #/^\d{4}-\d{2}-\d{2}$/)
+                          (yaml-schema-resolvers yaml-1.2-core-schema))
+                    (acons "!date"
+                           (^v (map string->number (string-split v #\-)))
+                           (acons "!sym" string->symbol
+                                  (yaml-schema-constructors
+                                   yaml-1.2-core-schema)))))
+
+(test* "custom schema"
+       '((("a" 2002 12 14) ("b" . foo) ("c" . 1)))
+       (parameterize ([yaml-schema my-schema])
+         (parse-string "a: 2002-12-14\nb: !sym foo\nc: 1\n")))
+
+(test* "custom schema doesn't leak"
+       '((("a" . "2002-12-14")))
+       (parse-string "a: 2002-12-14\n"))
+
+(test* "block scalars stay strings"
+       '((("a" . "x\n") ("b" . "") ("c" . "")))
+       (parse-string "a: |\n  x\nb: >\nc: |\n"))
+
+(test* "resolution in keys and sequences"
+       '(((null . "a") (#t . "b")) #(null #t))
+       (parse-string "--- \n~: a\ntrue: b\n--- [null, true]\n"))
+
+(test-section "yaml-parse-file")
+
+(use file.util)
+
+(define *example-dir*
+  (build-path (sys-dirname (current-load-path)) "data" "examples"))
+
+;; The examples from the YAML 1.2 spec (data/examples/*.yaml), paired with
+;; the result yaml-parse-file is expected to return.
+(define *examples*
+  '(("2.1.yaml"
+     (#("Mark McGwire" "Sammy Sosa" "Ken Griffey")))
+    ("2.2.yaml"
+     ((("hr" . 65) ("avg" . 0.278) ("rbi" . 147))))
+    ("2.3.yaml"
+     ((("american" . #("Boston Red Sox" "Detroit Tigers" "New York Yankees"))
+       ("national" . #("New York Mets" "Chicago Cubs" "Atlanta Braves")))))
+    ("2.4.yaml"
+     (#((("name" . "Mark McGwire") ("hr" . 65) ("avg" . 0.278))
+        (("name" . "Sammy Sosa") ("hr" . 63) ("avg" . 0.288)))))
+    ("2.5.yaml"
+     (#(#("name" "hr" "avg")
+        #("Mark McGwire" 65 0.278)
+        #("Sammy Sosa" 63 0.288))))
+    ("2.6.yaml"
+     ((("Mark McGwire" ("hr" . 65) ("avg" . 0.278))
+       ("Sammy Sosa" ("hr" . 63) ("avg" . 0.288)))))
+    ("2.7.yaml"
+     (#("Mark McGwire" "Sammy Sosa" "Ken Griffey")
+      #("Chicago Cubs" "St Louis Cardinals")))
+    ("2.8.yaml"
+     ((("time" . "20:03:20") ("player" . "Sammy Sosa")
+       ("action" . "strike (miss)"))
+      (("time" . "20:03:47") ("player" . "Sammy Sosa")
+       ("action" . "grand slam"))))
+    ("2.9.yaml"
+     ((("hr" . #("Mark McGwire" "Sammy Sosa"))
+       ("rbi" . #("Sammy Sosa" "Ken Griffey")))))
+    ("2.11.yaml"
+     (((#("Detroit Tigers" "Chicago cubs") . #("2001-07-23"))
+       (#("New York Yankees" "Atlanta Braves")
+        . #("2001-07-02" "2001-08-12" "2001-08-14")))))
+    ("2.12.yaml"
+     (#((("item" . "Super Hoop") ("quantity" . 1))
+        (("item" . "Basketball") ("quantity" . 4))
+        (("item" . "Big Shoes") ("quantity" . 1)))))
+    ("2.13.yaml"
+     ("\\//||\\/||\n// ||  ||__\n"))
+    ("2.14.yaml"
+     ("Mark McGwire's year was crippled by a knee injury.\n"))
+    ("2.15.yaml"
+     ("Sammy Sosa completed another fine season with great stats.\n\n  63 Home Runs\n  0.288 Batting Average\n\nWhat a year!\n"))
+    ("2.16.yaml"
+     ((("name" . "Mark McGwire")
+       ("accomplishment" . "Mark set a major league home run record in 1998.\n")
+       ("stats" . "65 Home Runs\n0.278 Batting Average\n"))))
+    ("2.17.yaml"
+     ((("unicode" . "Sosa did fine.☺")
+       ("control" . "\x08;1998\t1999\t2000\n")
+       ("hex esc" . "\r\n is \r\n")
+       ("single" . "\"Howdy!\" he cried.")
+       ("quoted" . " # Not a 'comment'.")
+       ("tie-fighter" . "|\\-*-/|"))))
+    ("2.18.yaml"
+     ((("plain" . "This unquoted scalar spans many lines.")
+       ("quoted" . "So does this quoted scalar.\n"))))
+    ("2.19.yaml"
+     ((("canonical" . 12345) ("decimal" . 12345)
+       ("octal" . 12) ("hexadecimal" . 12))))
+    ("2.20.yaml"
+     ((("canonical" . 1230.15) ("exponential" . 1230.15)
+       ("fixed" . 1230.15) ("negative infinity" . -inf.0)
+       ("not a number" . +nan.0))))
+    ("2.21.yaml"
+     (((null . null) ("booleans" . #(#t #f)) ("string" . "012345"))))
+    ("2.22.yaml"
+     ((("canonical" . "2001-12-15T02:59:43.1Z")
+       ("iso8601" . "2001-12-14t21:59:43.10-05:00")
+       ("spaced" . "2001-12-14 21:59:43.10 -5")
+       ("date" . "2002-12-14"))))
+    ("2.23.yaml"
+     ((("not-date" . "2002-04-28")
+       ("picture" . "R0lGODlhDAAMAIQAAP//9/X\n17unp5WZmZgAAAOfn515eXv\n\
+                     Pz7Y6OjuDg4J+fn5OTk6enp\n56enmleECcgggoBADs=\n")
+       ("application specific tag"
+        . "The semantics of the tag\nabove may be different for\n\
+           different documents.\n"))))
+    ("2.25.yaml"
+     ((("Mark McGwire" . null) ("Sammy Sosa" . null) ("Ken Griffey" . null))))
+    ("2.26.yaml"
+     (#((("Mark McGwire" . 65)) (("Sammy Sosa" . 63))
+        (("Ken Griffey" . 58)))))
+    ("2.28.yaml"
+     ((("Time" . "2001-11-23 15:01:42 -5") ("User" . "ed")
+       ("Warning" . "This is an error message for the log file"))
+      (("Time" . "2001-11-23 15:02:31 -5") ("User" . "ed")
+       ("Warning" . "A slightly different error message."))
+      (("Date" . "2001-11-23 15:03:17 -5") ("User" . "ed")
+       ("Fatal" . "Unknown variable \"bar\"")
+       ("Stack" . #((("file" . "TopClass.py") ("line" . 23)
+                     ("code" . "x = MoreObject(\"345\\n\")\n"))
+                    (("file" . "MoreClass.py") ("line" . 58)
+                     ("code" . "foo = bar")))))))
+    ))
+
+;; These examples use aliases, which we don't support yet.
+(define *unsupported-examples* '("2.10.yaml" "2.24.yaml" "2.27.yaml"))
+
+(dolist [e *examples*]
+  (test* #"yaml-parse-file ~(car e)" (cadr e)
+         (yaml-parse-file (build-path *example-dir* (car e)))))
+
+(dolist [f *unsupported-examples*]
+  (test* #"yaml-parse-file ~f (alias)"
+         (test-error <error> #/alias is not supported/)
+         (yaml-parse-file (build-path *example-dir* f))))
+
+;; Guard against an example file that's neither tested nor listed as skipped.
+(test* "all example files are accounted for" '()
+       (let1 covered (append (map car *examples*) *unsupported-examples*)
+         (filter (^f (not (member f covered)))
+                 (sort (map sys-basename
+                            (glob (build-path *example-dir* "*.yaml")))))))
 
 (test-end :exit-on-failure #t)
