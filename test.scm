@@ -104,17 +104,6 @@
        (test-error <error> #/alias is not supported/)
        (parse-string "a: &x 1\nb: *x\n"))
 
-(test* "yaml-parser-load"
-       (list (make <yaml-mark> :index 0 :line 0 :column 0)
-             (make <yaml-mark> :index 6 :line 1 :column 0))
-       (let1 p (make <yaml-parser>)
-         (yaml-parser-set-input-string p "foo: 3")
-         (let1 d (yaml-parser-load p)
-           (yaml-fini p)
-           (and (is-a? d <yaml-document>)
-                (list (~ d'start_mark)
-                      (~ d'end_mark))))))
-
 (test-section "scalar resolution")
 
 (test* "null (implicit)"

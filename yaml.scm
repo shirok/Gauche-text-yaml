@@ -81,8 +81,6 @@
           yaml-1.1-construct-int
           yaml-1.1-construct-float
 
-          <yaml-document>
-
           <yaml-parser>
           yaml-parser-active?
           yaml-parser-set-input-string
@@ -90,7 +88,6 @@
           yaml-parser-scan!
           yaml-parser-parse!
           yaml-parser-parse
-          yaml-parser-load
 
           yaml-parse-file)
   )
@@ -573,6 +570,9 @@
     (cond [(assoc tag (yaml-schema-constructors schema)) => (^p ((cdr p) val))]
           [else val])))
 
+;; NB: We define yaml_node and yaml_document related types, but we don't
+;; really provide API to deal with it.  We can use yaml_event layer directly
+;; to provide high-level API (e.g. yaml-parse-file).
 (define-type yaml_node_pair_t
   (native-type
    `(.struct yaml_node_pair_s (key::int value::int))))
@@ -794,55 +794,6 @@
   )
 
 ;;;
-;;;  Document
-;;;
-
-(with-ffi *libyaml* ()
-  (define-c-function %yaml-document-initialize
-    `(,yaml_document_t*
-      (,yaml_version_directive_t *)
-      (,yaml_tag_directive_t *)
-      (,yaml_tag_directive_t *)
-      int int) <int>)
-  (define-c-function %yaml-document-delete `(,yaml_document_t*) <void>)
-
-  (define-c-function %yaml-document-get-node
-    `(,yaml_document_t* int)
-    `,yaml_node_t*)
-  (define-c-function %yaml-document-add-scalar
-    `(,yaml_document_t*
-      (const ,yaml_char_t *)
-      (const ,yaml_char_t *)
-      int ,yaml_scalar_style_t)
-    <int>)
-  (define-c-function %yaml-document-add-sequence
-    `(,yaml_document_t*
-      (const ,yaml_char_t *)
-      ,yaml_sequence_style_t)
-    <int>)
-  (define-c-function %yaml-document-add-mapping
-    `(,yaml_document_t*
-      (const ,yaml_char_t *)
-      ,yaml_mapping_style_t)
-    <int>)
-  (define-c-function %yaml-document-append-sequence-item
-    `(,yaml_document_t* int int)
-    <int>)
-  (define-c-function %yaml-document-append-mapping-pair
-    `(,yaml_document_t* int int int)
-    <int>)
-  )
-
-(define-native-wrapper-class <yaml-document> yaml_document_t
-  :slot-overrides
-  `((start_implicit? :field-name start_implicit
-                     :ref-converter ,c-int->boolean
-                     :set! #f)
-    (end_implicit?   :field-name end_implicit
-                     :ref-converter ,c-int->boolean
-                     :set! #f)))
-
-;;;
 ;;;  Parser
 ;;;
 
@@ -871,10 +822,6 @@
   (define-c-function %yaml-parser-parse
     `(,yaml_parser_t*
       ,yaml_event_t*) <int>)
-
-  (define-c-function %yaml-parser-load
-    `(,yaml_parser_t*
-      ,yaml_document_t*) <int>)
   )
 
 (define-class <yaml-parser> ()
@@ -1007,12 +954,6 @@
       (unless (= type YAML_STREAM_START_EVENT)
         (unexpected type))
       (documents '()))))
-
-(define (yaml-parser-load parser)
-  (let ([doc (make-native-handle yaml_document_t)]
-        [p (%parser-handle parser)])
-    (call-yaml %yaml-parser-load p doc)
-    (wrap-native-handle doc)))
 
 ;; High-level utility
 
