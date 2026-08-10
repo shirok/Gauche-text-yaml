@@ -896,11 +896,8 @@
       (error "YAML parser has already been deleted:" parser)))
 
 (define (yaml-parser-set-input-string parser string)
-  ;; NB: make-native-handle doesn't take an empty string.  We pass a dummy
-  ;; buffer instead; libyaml won't look at it, for the size is zero.
   (let ([p (%parser-handle parser)]
-        [h (make-native-handle (native-type '(const unsigned char*))
-                               (if (equal? string "") " " string))])
+        [h (make-native-handle (native-type '(const unsigned char*)) string)])
     (set! (~ parser'%input) h)
     (%yaml-parser-set-input-string p h (string-size string))))
 
