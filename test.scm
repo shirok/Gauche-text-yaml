@@ -275,7 +275,7 @@
 
 (test-section "schemas")
 
-(test* "core schema is the default" 'core (yaml-schema-name (yaml-schema)))
+(test* "core schema is the default" 'core (~ (yaml-schema)'name))
 
 (test* "failsafe schema"
        '((("a" . "1") ("b" . "true") ("c" . "") ("d" . "1.5") ("e" . "x")))
@@ -315,12 +315,11 @@
 (define my-schema
   (make-yaml-schema 'my
                     (cons '("!date" . #/^\d{4}-\d{2}-\d{2}$/)
-                          (yaml-schema-resolvers yaml-1.2-core-schema))
+                          (~ yaml-1.2-core-schema'resolvers))
                     (acons "!date"
                            (^v (map string->number (string-split v #\-)))
                            (acons "!sym" string->symbol
-                                  (yaml-schema-constructors
-                                   yaml-1.2-core-schema)))))
+                                  (~ yaml-1.2-core-schema'constructors)))))
 
 (test* "custom schema"
        '((("a" 2002 12 14) ("b" . foo) ("c" . 1)))

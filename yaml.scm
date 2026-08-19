@@ -6,7 +6,6 @@
   (use gauche.dictionary)
   (use gauche.native-type)
   (use gauche.ffi)
-  (use gauche.record)
   (use gauche.uvector)
   (use scheme.box)
   (export yaml-get-version-string
@@ -63,10 +62,6 @@
 
           <yaml-schema>
           make-yaml-schema
-          yaml-schema?
-          yaml-schema-name
-          yaml-schema-resolvers
-          yaml-schema-constructors
           yaml-schema
           yaml-1.2-core-schema
           yaml-1.1-schema
@@ -405,12 +400,17 @@
 (define yaml-float-tag "tag:yaml.org,2002:float")
 (define yaml-str-tag "tag:yaml.org,2002:str")
 
-(define-record-type <yaml-schema>
-  (make-yaml-schema name resolvers constructors)
-  yaml-schema?
-  (name yaml-schema-name)
-  (resolvers yaml-schema-resolvers)
-  (constructors yaml-schema-constructors))
+(define-class <yaml-schema> ()
+  ((name :init-keyword :name :init-value #f)
+   (resolvers :init-keyword :resolvers :init-value '())
+   (constructors :init-keyword :constructors :init-value '())))
+
+(define (make-yaml-schema name resolvers constructors)
+  (make <yaml-schema>
+    :name name :resolvers resolvers :constructors constructors))
+
+(define-method write-object ((obj <yaml-schema>) port)
+  (format port "#<yaml-schema ~a>" (~ obj'name)))
 
 ;; Resolution patterns of the YAML 1.2 core schema.  The int pattern
 ;; must be tried before the float one, for the float pattern also
@@ -546,7 +546,7 @@
 
 ;; Returns the tag SCHEMA resolves the plain scalar VAL to.
 (define (yaml-resolve-tag schema val)
-  (let loop ([rs (yaml-schema-resolvers schema)])
+  (let loop ([rs (~ schema'resolvers)])
     (cond [(null? rs) yaml-str-tag]
           [((cdar rs) val) (caar rs)]
           [else (loop (cdr rs))])))
@@ -573,7 +573,7 @@
                     [(= (native. h 'data 'scalar 'plain_implicit) 1)
                      (yaml-resolve-tag schema val)]
                     [else yaml-str-tag])])
-    (cond [(assoc tag (yaml-schema-constructors schema)) => (^p ((cdr p) val))]
+    (cond [(assoc tag (~ schema'constructors)) => (^p ((cdr p) val))]
           [else val])))
 
 ;; Returns the anchor of EVENT as a string, or #f if it has none.
