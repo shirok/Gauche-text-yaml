@@ -7,6 +7,7 @@
   (use gauche.native-type)
   (use gauche.ffi)
   (use gauche.record)
+  (use gauche.uvector)
   (use scheme.box)
   (export yaml-get-version-string
           yaml-get-version
@@ -834,8 +835,33 @@
       (const unsigned char*)
       size_t) <void>)
 
-  ;; We don't provide yaml_parser_set_input_file and yaml_parser_set_input
-  ;; Scheme-friendly yaml-parser-set-input-port is defined below
+  ;; NB: We don't provide yaml_parser_set_input_file, because Gauche doesn't
+  ;; deal with FILE*.
+  ;; Instead, we provide yaml-parser-set-input-port, built on top of
+  ;; reader callback.  Note that we pass <yaml-reader-context> instance
+  ;; to the opaque data for the reader callback.
+  (define-c-function %yaml-parser-set-input
+    `(,yaml_parser_t*
+      (,yaml_read_handler_t *)
+      ScmObj) <void>)
+
+  (define-c-callback %yaml-parser-reader-cb
+    ((ctx 'ScmObj)           ;<yaml-reader-context> - defined below
+     (buffer '(unsigned char *))
+     (size 'size_t)
+     (size_read '(size_t *)))
+    'int
+    ;; body
+    (%reader-context-prepare! ctx size)
+    (let* ([r (read-uvector! (~ ctx'scratch)
+                             (~ ctx'port)
+                             0 size)]
+           [nread (if (eof-object? r) 0 r)])
+      (when (> nread 0)
+        (copy-handle-memory! buffer (~ ctx'handle) nread))
+      (set! (native* size_read) nread)
+      ;; TODO: probably we should catch Scheme error and return 0.
+      1))
 
   (define-c-function %yaml-parser-set-encoding
     `(,yaml_parser_t*
@@ -901,33 +927,31 @@
     (set! (~ parser'%input) h)
     (%yaml-parser-set-input-string p h (string-size string))))
 
-(inline-stub
- (define-cfn %yaml-parser-reader-cb (data::void*
-                                     buffer::u_char*
-                                     size::size_t
-                                     size_read::size_t*)
-   ::int
-   (let* ([port::ScmPort* (cast ScmPort* data)]
-          [nread::ScmSize (Scm_Getz (cast char* buffer) size port)])
-     (if (== nread EOF)
-       (set! (* size_read) 0)
-       (set! (* size_read) nread))
-     ;; TODO: probably we should catch Scheme error and return 0.
-     (return 1)))
- )
+;; Reading from a Scheme port.
 
-(define-cproc %yaml-parser-set-input-port (parser
-                                           port::<input-port>)
-  ::<void>
-  (let* ([p::yaml_parser_t*
-          (Scm_NativeHandlePtr (SCM_NATIVE_HANDLE parser))])
-    (yaml_parser_set_input p %yaml-parser-reader-cb port)))
+(define-class <yaml-reader-context> ()
+  ((port :init-keyword :port)
+   ;; Scratch buffer to read into, and a native handle on it.  Allocated
+   ;; lazily on the first call and reused afterwards.
+   (scratch :init-form #f)
+   (handle  :init-form #f)))
+
+(define %u8ptr (native-type '(unsigned char *)))
+
+;; Make sure the scratch buffer of CTX can hold SIZE bytes.
+(define (%reader-context-prepare! ctx size)
+  (let1 v (~ ctx'scratch)
+    (when (or (not v) (< (u8vector-length v) size))
+      (let1 v (make-u8vector size)
+        (set! (~ ctx'scratch) v)
+        (set! (~ ctx'handle) (make-native-handle %u8ptr v))))))
 
 (define (yaml-parser-set-input-port parser port)
   (assume-type port <input-port>)
-  (let1 p (%parser-handle parser)
-    (set! (~ parser'%input) port)
-    (%yaml-parser-set-input-port p port)))
+  (let ([p (%parser-handle parser)]
+        [ctx (make <yaml-reader-context> :port port)])
+    (set! (~ parser'%input) ctx)        ;prevent ctx from GC-ed
+    (%yaml-parser-set-input p %yaml-parser-reader-cb ctx)))
 
 (define (yaml-parser-scan! parser token)
   (assume-type token <yaml-token>)
