@@ -3,7 +3,6 @@
 ;;;
 
 (define-module text.yaml
-  (use gauche.dictionary)
   (use gauche.native-type)
   (use gauche.ffi)
   (use gauche.uvector)
@@ -94,117 +93,123 @@
   )
 (select-module text.yaml)
 
-(inline-stub
- (declcode
-  (.include <yaml.h>)
-  (.include <gauche/extend.h>))
+;; Enums
+(with-ffi #f (:subsystem :stubgen
+              :c-headers ("yaml.h"))
 
- ;; Enums
+  (define-c-enum (yaml_event_type_t yaml_event_type_e)
+    (YAML_NO_EVENT
+     YAML_STREAM_START_EVENT
+     YAML_STREAM_END_EVENT
+     YAML_DOCUMENT_START_EVENT
+     YAML_DOCUMENT_END_EVENT
+     YAML_ALIAS_EVENT
+     YAML_SCALAR_EVENT
+     YAML_SEQUENCE_START_EVENT
+     YAML_SEQUENCE_END_EVENT
+     YAML_MAPPING_START_EVENT
+     YAML_MAPPING_END_EVENT))
 
- (define-cenum <yaml-event-type> "yaml_event_type_t"
-   (YAML_NO_EVENT
-    YAML_STREAM_START_EVENT
-    YAML_STREAM_END_EVENT
-    YAML_DOCUMENT_START_EVENT
-    YAML_DOCUMENT_END_EVENT
-    YAML_ALIAS_EVENT
-    YAML_SCALAR_EVENT
-    YAML_SEQUENCE_START_EVENT
-    YAML_SEQUENCE_END_EVENT
-    YAML_MAPPING_START_EVENT
-    YAML_MAPPING_END_EVENT))
+  (define-c-enum (yaml_encoding_t yaml_encoding_e)
+    (YAML_ANY_ENCODING
+     YAML_UTF8_ENCODING
+     YAML_UTF16LE_ENCODING
+     YAML_UTF16BE_ENCODING))
 
- (define-cenum <yaml-encoding> "yaml_encoding_t"
-   (YAML_ANY_ENCODING
-    YAML_UTF8_ENCODING
-    YAML_UTF16LE_ENCODING
-    YAML_UTF16BE_ENCODING))
+  (define-c-enum (yaml_break_t yaml_break_e)
+    (YAML_ANY_BREAK
+     YAML_CR_BREAK
+     YAML_LN_BREAK
+     YAML_CRLN_BREAK))
 
- (define-cenum <yaml-break> "yaml_break_t"
-   (YAML_ANY_BREAK
-    YAML_CR_BREAK
-    YAML_LN_BREAK
-    YAML_CRLN_BREAK))
+  (define-c-enum (yaml_error_type_t yaml_error_type_e)
+    (YAML_NO_ERROR
+     YAML_MEMORY_ERROR
+     YAML_READER_ERROR
+     YAML_SCANNER_ERROR
+     YAML_PARSER_ERROR
+     YAML_COMPOSER_ERROR
+     YAML_WRITER_ERROR
+     YAML_EMITTER_ERROR))
 
- (define-cenum <yaml-scalar-style> "yaml_scalar_style_t"
-   (YAML_ANY_SCALAR_STYLE
-    YAML_PLAIN_SCALAR_STYLE
-    YAML_SINGLE_QUOTED_SCALAR_STYLE
-    YAML_DOUBLE_QUOTED_SCALAR_STYLE
-    YAML_LITERAL_SCALAR_STYLE
-    YAML_FOLDED_SCALAR_STYLE))
+  (define-c-enum (yaml_scalar_style_t yaml_scalar_style_e)
+    (YAML_ANY_SCALAR_STYLE
+     YAML_PLAIN_SCALAR_STYLE
+     YAML_SINGLE_QUOTED_SCALAR_STYLE
+     YAML_DOUBLE_QUOTED_SCALAR_STYLE
+     YAML_LITERAL_SCALAR_STYLE
+     YAML_FOLDED_SCALAR_STYLE))
 
- (define-cenum <yaml-sequence-style> "yaml_sequence_style_t"
-   (YAML_ANY_SEQUENCE_STYLE
-    YAML_BLOCK_SEQUENCE_STYLE
-    YAML_FLOW_SEQUENCE_STYLE))
+  (define-c-enum (yaml_sequence_style_t yaml_sequence_style_e)
+    (YAML_ANY_SEQUENCE_STYLE
+     YAML_BLOCK_SEQUENCE_STYLE
+     YAML_FLOW_SEQUENCE_STYLE))
 
- (define-cenum <yaml-mapping-style> "yaml_mapping_style_t"
-   (YAML_ANY_MAPPING_STYLE
-    YAML_BLOCK_MAPPING_STYLE
-    YAML_FLOW_MAPPING_STYLE))
+  (define-c-enum (yaml_mapping_style_t yaml_mapping_style_e)
+    (YAML_ANY_MAPPING_STYLE
+     YAML_BLOCK_MAPPING_STYLE
+     YAML_FLOW_MAPPING_STYLE))
 
- (define-cenum <yaml-token-type> "yaml_token_type_t"
-   (YAML_NO_TOKEN
-    YAML_STREAM_START_TOKEN
-    YAML_STREAM_END_TOKEN
-    YAML_VERSION_DIRECTIVE_TOKEN
-    YAML_TAG_DIRECTIVE_TOKEN
-    YAML_DOCUMENT_START_TOKEN
-    YAML_DOCUMENT_END_TOKEN
-    YAML_BLOCK_SEQUENCE_START_TOKEN
-    YAML_BLOCK_MAPPING_START_TOKEN
-    YAML_BLOCK_END_TOKEN
-    YAML_FLOW_SEQUENCE_START_TOKEN
-    YAML_FLOW_SEQUENCE_END_TOKEN
-    YAML_FLOW_MAPPING_START_TOKEN
-    YAML_FLOW_MAPPING_END_TOKEN
-    YAML_BLOCK_ENTRY_TOKEN
-    YAML_FLOW_ENTRY_TOKEN
-    YAML_KEY_TOKEN
-    YAML_VALUE_TOKEN
-    YAML_ALIAS_TOKEN
-    YAML_ANCHOR_TOKEN
-    YAML_TAG_TOKEN
-    YAML_SCALAR_TOKEN))
+  (define-c-enum (yaml_token_type_t yaml_token_type_e)
+    (YAML_NO_TOKEN
+     YAML_STREAM_START_TOKEN
+     YAML_STREAM_END_TOKEN
+     YAML_VERSION_DIRECTIVE_TOKEN
+     YAML_TAG_DIRECTIVE_TOKEN
+     YAML_DOCUMENT_START_TOKEN
+     YAML_DOCUMENT_END_TOKEN
+     YAML_BLOCK_SEQUENCE_START_TOKEN
+     YAML_BLOCK_MAPPING_START_TOKEN
+     YAML_BLOCK_END_TOKEN
+     YAML_FLOW_SEQUENCE_START_TOKEN
+     YAML_FLOW_SEQUENCE_END_TOKEN
+     YAML_FLOW_MAPPING_START_TOKEN
+     YAML_FLOW_MAPPING_END_TOKEN
+     YAML_BLOCK_ENTRY_TOKEN
+     YAML_FLOW_ENTRY_TOKEN
+     YAML_KEY_TOKEN
+     YAML_VALUE_TOKEN
+     YAML_ALIAS_TOKEN
+     YAML_ANCHOR_TOKEN
+     YAML_TAG_TOKEN
+     YAML_SCALAR_TOKEN))
 
- (define-cenum <yaml_node_type> "yaml_node_type_t"
-   (YAML_NO_NODE
-    YAML_SCALAR_NODE
-    YAML_SEQUENCE_NODE
-    YAML_MAPPING_NODE))
+  (define-c-enum (yaml_node_type_t yaml_node_type_e)
+    (YAML_NO_NODE
+     YAML_SCALAR_NODE
+     YAML_SEQUENCE_NODE
+     YAML_MAPPING_NODE))
 
- (define-cenum <yaml_parser_state> "yaml_parser_state_t"
-   (YAML_PARSE_STREAM_START_STATE
-    YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE
-    YAML_PARSE_DOCUMENT_START_STATE
-    YAML_PARSE_DOCUMENT_CONTENT_STATE
-    YAML_PARSE_DOCUMENT_END_STATE
+  (define-c-enum (yaml_parser_state_t yaml_parser_state_e)
+    (YAML_PARSE_STREAM_START_STATE
+     YAML_PARSE_IMPLICIT_DOCUMENT_START_STATE
+     YAML_PARSE_DOCUMENT_START_STATE
+     YAML_PARSE_DOCUMENT_CONTENT_STATE
+     YAML_PARSE_DOCUMENT_END_STATE
 
-    YAML_PARSE_BLOCK_NODE_STATE
-    YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE
-    YAML_PARSE_FLOW_NODE_STATE
-    YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE
-    YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE
+     YAML_PARSE_BLOCK_NODE_STATE
+     YAML_PARSE_BLOCK_NODE_OR_INDENTLESS_SEQUENCE_STATE
+     YAML_PARSE_FLOW_NODE_STATE
+     YAML_PARSE_BLOCK_SEQUENCE_FIRST_ENTRY_STATE
+     YAML_PARSE_BLOCK_SEQUENCE_ENTRY_STATE
 
-    YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE
-    YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE
-    YAML_PARSE_BLOCK_MAPPING_KEY_STATE
-    YAML_PARSE_BLOCK_MAPPING_VALUE_STATE
-    YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE
+     YAML_PARSE_INDENTLESS_SEQUENCE_ENTRY_STATE
+     YAML_PARSE_BLOCK_MAPPING_FIRST_KEY_STATE
+     YAML_PARSE_BLOCK_MAPPING_KEY_STATE
+     YAML_PARSE_BLOCK_MAPPING_VALUE_STATE
+     YAML_PARSE_FLOW_SEQUENCE_FIRST_ENTRY_STATE
 
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE
-    YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE
-    YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE
+     YAML_PARSE_FLOW_SEQUENCE_ENTRY_STATE
+     YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_KEY_STATE
+     YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_VALUE_STATE
+     YAML_PARSE_FLOW_SEQUENCE_ENTRY_MAPPING_END_STATE
+     YAML_PARSE_FLOW_MAPPING_FIRST_KEY_STATE
 
-    YAML_PARSE_FLOW_MAPPING_KEY_STATE
-    YAML_PARSE_FLOW_MAPPING_VALUE_STATE
-    YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE
-    YAML_PARSE_END_STATE))
-
- )
+     YAML_PARSE_FLOW_MAPPING_KEY_STATE
+     YAML_PARSE_FLOW_MAPPING_VALUE_STATE
+     YAML_PARSE_FLOW_MAPPING_EMPTY_VALUE_STATE
+     YAML_PARSE_END_STATE))
+  )
 
 (define-type yaml_char_t <uint8>)
 (define-type yaml_char_t* (make-c-pointer-type yaml_char_t))
@@ -242,17 +247,7 @@
        (eqv? (~ a'column) (~ b'column))))
 
 
-(define-type yaml_encoding_t <int>)          ;enum
-(define-type yaml_char_style_t <int>)        ;enum
-(define-type yaml_scalar_style_t <int>)      ;enum
-(define-type yaml_sequence_style_t <int>)    ;enum
-(define-type yaml_mapping_style_t <int>)     ;enum
-(define-type yaml_token_type_t <int>)        ;enum
-(define-type yaml_event_type_t <int>)        ;enum
-(define-type yaml_node_type_t <int>)         ;enum
-(define-type yaml_node_item_t <int>)
-(define-type yaml_error_type_t <int>)        ;enum
-(define-type yaml_parser_state_t <int>)      ;enum
+(define-type yaml_node_item_t <int>)   ;typedef int in yaml.h
 
 (define-type yaml_token_t
   (native-type
@@ -267,7 +262,7 @@
                                       suffix::,yaml_char_t*))
               scalar      ::(.struct (value::,yaml_char_t*
                                       length::size_t
-                                      style::,yaml_char_style_t))
+                                      style::,yaml_scalar_style_t))
               version_directive::(.struct (major::int
                                            minor::int))
               tag_directive::(.struct (handle::,yaml_char_t*
@@ -278,36 +273,10 @@
 
 (define-native-wrapper-class <yaml-token> yaml_token_t)
 
-(define *yaml-token-type-map*
-  (rlet1 m (make-bimap (make-hash-table 'eqv?) (make-hash-table 'eqv?))
-    (for-each (^p (bimap-put! m (car p) (cdr p)))
-              `((YAML_NO_TOKEN . ,YAML_NO_TOKEN)
-                (YAML_STREAM_START_TOKEN . ,YAML_STREAM_START_TOKEN)
-                (YAML_STREAM_END_TOKEN . ,YAML_STREAM_END_TOKEN)
-                (YAML_VERSION_DIRECTIVE_TOKEN . ,YAML_VERSION_DIRECTIVE_TOKEN)
-                (YAML_TAG_DIRECTIVE_TOKEN . ,YAML_TAG_DIRECTIVE_TOKEN)
-                (YAML_DOCUMENT_START_TOKEN . ,YAML_DOCUMENT_START_TOKEN)
-                (YAML_DOCUMENT_END_TOKEN . ,YAML_DOCUMENT_END_TOKEN)
-                (YAML_BLOCK_SEQUENCE_START_TOKEN . ,YAML_BLOCK_SEQUENCE_START_TOKEN)
-                (YAML_BLOCK_MAPPING_START_TOKEN . ,YAML_BLOCK_MAPPING_START_TOKEN)
-                (YAML_BLOCK_END_TOKEN . ,YAML_BLOCK_END_TOKEN)
-                (YAML_FLOW_SEQUENCE_START_TOKEN . ,YAML_FLOW_SEQUENCE_START_TOKEN)
-                (YAML_FLOW_SEQUENCE_END_TOKEN . ,YAML_FLOW_SEQUENCE_END_TOKEN)
-                (YAML_FLOW_MAPPING_START_TOKEN . ,YAML_FLOW_MAPPING_START_TOKEN)
-                (YAML_FLOW_MAPPING_END_TOKEN . ,YAML_FLOW_MAPPING_END_TOKEN)
-                (YAML_BLOCK_ENTRY_TOKEN . ,YAML_BLOCK_ENTRY_TOKEN)
-                (YAML_FLOW_ENTRY_TOKEN . ,YAML_FLOW_ENTRY_TOKEN)
-                (YAML_KEY_TOKEN . ,YAML_KEY_TOKEN)
-                (YAML_VALUE_TOKEN . ,YAML_VALUE_TOKEN)
-                (YAML_ALIAS_TOKEN . ,YAML_ALIAS_TOKEN)
-                (YAML_ANCHOR_TOKEN . ,YAML_ANCHOR_TOKEN)
-                (YAML_TAG_TOKEN . ,YAML_TAG_TOKEN)
-                (YAML_SCALAR_TOKEN . ,YAML_SCALAR_TOKEN)))))
-
 (define (yaml-token-type-name token-type)
-  (bimap-right-get *yaml-token-type-map* token-type))
+  (c-enum-symbol yaml_token_type_t token-type))
 (define (yaml-token-type-value token-type-name)
-  (bimap-left-get *yaml-token-type-map* token-type-name))
+  (c-enum-value yaml_token_type_t token-type-name))
 
 ;; Returns the scalar value of TOKEN as a string.  TOKEN must be
 ;; a scalar token.
@@ -358,25 +327,10 @@
 
 (define-native-wrapper-class <yaml-event> yaml_event_t)
 
-(define *yaml-event-type-map*
-  (rlet1 m (make-bimap (make-hash-table 'eqv?) (make-hash-table 'eqv?))
-    (for-each (^p (bimap-put! m (car p) (cdr p)))
-              `((YAML_NO_EVENT . ,YAML_NO_EVENT)
-                (YAML_STREAM_START_EVENT . ,YAML_STREAM_START_EVENT)
-                (YAML_STREAM_END_EVENT . ,YAML_STREAM_END_EVENT)
-                (YAML_DOCUMENT_START_EVENT . ,YAML_DOCUMENT_START_EVENT)
-                (YAML_DOCUMENT_END_EVENT . ,YAML_DOCUMENT_END_EVENT)
-                (YAML_ALIAS_EVENT . ,YAML_ALIAS_EVENT)
-                (YAML_SCALAR_EVENT . ,YAML_SCALAR_EVENT)
-                (YAML_SEQUENCE_START_EVENT . ,YAML_SEQUENCE_START_EVENT)
-                (YAML_SEQUENCE_END_EVENT . ,YAML_SEQUENCE_END_EVENT)
-                (YAML_MAPPING_START_EVENT . ,YAML_MAPPING_START_EVENT)
-                (YAML_MAPPING_END_EVENT . ,YAML_MAPPING_END_EVENT)))))
-
 (define (yaml-event-type-name event-type)
-  (bimap-right-get *yaml-event-type-map* event-type))
+  (c-enum-symbol yaml_event_type_t event-type))
 (define (yaml-event-type-value event-type-name)
-  (bimap-left-get *yaml-event-type-map* event-type-name))
+  (c-enum-value yaml_event_type_t event-type-name))
 
 ;;
 ;; Scalar resolution
