@@ -94,8 +94,7 @@
 (select-module text.yaml)
 
 ;; Enums
-(with-ffi #f (:subsystem :stub
-              :c-headers ("yaml.h"))
+(with-ffi #f (:c-headers ("yaml.h"))
 
   (define-c-enum (yaml_event_type_t yaml_event_type_e)
     (YAML_NO_EVENT
