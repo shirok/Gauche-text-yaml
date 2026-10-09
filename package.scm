@@ -4,7 +4,7 @@
 
 (define-gauche-package "Gauche-text-yaml"
   ;;
-  :version "1.0"
+  :version "0.0"
 
   ;; Description of the package.  The first line is used as a short
   ;; summary.
@@ -24,7 +24,7 @@
   :maintainers ()
 
   ;; List licenses
-  :licenses ("BSD")
+  :licenses ("MIT")
 
   ;; Homepage URL, if any.
   ; :homepage "http://example.com/Gauche-text-yaml/"

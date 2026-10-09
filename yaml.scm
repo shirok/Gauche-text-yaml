@@ -1,6 +1,13 @@
 ;;;
-;;;  LibYAML binding for Gauche
+;;; text.yaml - libYAML binding
 ;;;
+;;;   Copyright (c) 2016 Shiro Kawai  <shiro@acm.org>
+;;;
+
+;; Note: This implementation servces a practical application of
+;; Gauche FFI.  If you only need high-level libyaml API, it would
+;; be simpler to write it in the traditional stub+cise, skipping
+;; all the internal C struct type definitions.
 
 (define-module text.yaml
   (use gauche.native-type)
